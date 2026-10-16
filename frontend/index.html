@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#14213D" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>iCRM</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      /* ---------------------------------------------------------------
+       * Blank-screen recovery. Runs BEFORE the app bundle, deliberately.
+       *
+       * A previously-deployed service worker had a fetch handler that fell
+       * back to caches.match() and called respondWith(undefined) on a miss.
+       * After a redeploy the hashed bundle names change, every request
+       * misses, and the page loads no JavaScript at all — a white screen.
+       *
+       * The unregister logic inside the React bundle cannot rescue that:
+       * the bundle is exactly what fails to load. So the recovery must live
+       * here, inline in the HTML, where it runs regardless.
+       *
+       * The sessionStorage guard means this reloads at most once per tab,
+       * so a genuine failure can never become a reload loop.
+       * --------------------------------------------------------------- */
+      (function () {
+        if (!('serviceWorker' in navigator)) return;
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          // The follow-up reminder worker (/notify-sw.js, scope /notify-sw/)
+          // is kept: it has no fetch handler and never controls a page.
+          regs = regs.filter(function (r) { return !/\/notify-sw\/$/.test(r.scope); });
+          if (!regs.length) return;
+          var hadWorker = regs.some(function (r) { return r.active; });
+          Promise.all(regs.map(function (r) { return r.unregister(); }))
+            .then(function () {
+              if (window.caches && caches.keys) {
+                return caches.keys().then(function (keys) {
+                  return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+                });
+              }
+            })
+            .then(function () {
+              if (hadWorker && !sessionStorage.getItem('sw-cleared')) {
+                sessionStorage.setItem('sw-cleared', '1');
+                location.reload();
+              }
+            })
+            .catch(function () { /* recovery is best-effort */ });
+        }).catch(function () { /* ignore */ });
+      })();
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

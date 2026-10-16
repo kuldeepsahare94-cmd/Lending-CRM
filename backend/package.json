@@ -1,0 +1,38 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "seed-loans": "node seed-loan-demo.js",
+    "unseed-loans": "node seed-loan-demo.js --remove"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.8.2",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "imapflow": "^2.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "mailparser": "^3.9.23",
+    "multer": "^2.3.0",
+    "nodemailer": "^9.0.5",
+    "pdfkit": "^0.19.1",
+    "pg": "^8.23.0",
+    "qrcode": "^1.5.4",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,489 @@
+@import "tailwindcss";
+
+/* ============================================================
+   iCRM design system
+   One source of truth for colour, surface and type. Components
+   reference these tokens rather than hard-coded hex values, so
+   the whole product restyles from here.
+   ============================================================ */
+/* ------------------------------------------------------------------
+   The master palette lives here and ONLY here. Components reference
+   these tokens; none of them hard-code a hex value. Adding a second
+   set of dashboard-only tokens would have meant two palettes drifting
+   apart, so the existing token names keep their semantic roles and
+   take the new values — the dashboard and the rest of the app stay
+   one system.
+   ------------------------------------------------------------------ */
+@theme {
+  /* Brand — the primary purple */
+  --color-brand: #6C4FF7;
+  --color-brand-hover: #5137D9;       /* hover / active / strong emphasis */
+  --color-brand-soft: #F0EDFF;        /* icon backgrounds, selected states */
+  --color-brand-faint: #F8F6FF;       /* hover surfaces, subtle tints */
+  --color-brand-border: #DDD6FE;
+
+  /* Surfaces */
+  --color-canvas: #F7F8FC;      /* app background — never pure white */
+  --color-canvas-alt: #F4F5FA;  /* secondary background */
+  --color-surface: #FFFFFF;     /* cards, tables, drawer */
+  --color-surface-soft: #FAFAFD; /* inset rows inside a card */
+  --color-line: #E7EAF0;        /* borders/dividers */
+  --color-line-soft: #F0F1F5;   /* the lightest divider — inset row borders */
+  --color-line-strong: #D3D7E3;
+
+  /* Text — four steps, used strictly in order of importance */
+  --color-ink: #17233C;         /* headings, KPI figures */
+  --color-ink-light: #2C3A57;
+  --color-muted: #667085;       /* secondary/metadata */
+  --color-faint: #98A2B3;       /* timestamps, axis labels */
+  --color-disabled: #B8BEC9;
+
+  /* Semantic — each has a solid tone and a pastel surface.
+     Statuses map to these so the same meaning always looks the same,
+     and nothing picks a different shade for the same meaning. */
+  --color-info: #3B82F6;        --color-info-soft: #EFF6FF;
+  --color-info-strong: #2563EB;
+  --color-success: #10B981;     --color-success-soft: #ECFDF5;
+  --color-success-strong: #059669;
+  --color-teal: #14B8A6;        --color-teal-soft: #ECFDF9;
+  --color-teal-strong: #0F9F8F;
+  --color-warning: #F59E0B;     --color-warning-soft: #FFFBEB;
+  --color-warning-strong: #D97706;
+  --color-attention: #F97316;   --color-attention-soft: #FFF7ED;
+  --color-danger: #F43F5E;      --color-danger-soft: #FFF1F2;
+  --color-danger-strong: #E11D48;
+  --color-special: #8B5CF6;     --color-special-soft: #F5F3FF;
+  --color-neutral: #94A3B8;     --color-neutral-soft: #F1F5F9;
+
+  /* Legacy aliases — the previous palette is referenced across many
+     existing components. Mapping them here restyles those to the new
+     system without touching every file, and avoids a big-bang rewrite. */
+  --color-amber: #6C4FF7;
+  --color-amber-soft: #F0EDFF;
+  --color-good: #10B981;
+  --color-warn: #F43F5E;
+
+  --font-display: "Inter", "Segoe UI", sans-serif;
+  --font-body: "Inter", "Segoe UI", sans-serif;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Type scale — kept restrained; hierarchy comes from weight and
+   colour more than size, which reads as more professional. */
+.t-page-title  { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; color: var(--color-ink); }
+.t-page-sub    { font-size: 0.875rem; color: var(--color-muted); }
+.t-section     { font-size: 0.9375rem; font-weight: 600; color: var(--color-ink); }
+.t-meta        { font-size: 0.75rem; color: var(--color-muted); }
+
+/* Surfaces — the same card system the dashboard uses, so a card looks
+   like a card everywhere in the product rather than per-screen. */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(23, 35, 60, 0.05);
+}
+.card-hover { transition: box-shadow .2s ease, border-color .2s ease; }
+.card-hover:hover {
+  box-shadow: 0 6px 18px rgba(23, 35, 60, 0.08);
+  border-color: var(--color-line-strong);
+}
+
+/* Controls */
+.btn {
+  display: inline-flex; align-items: center; gap: .5rem;
+  font-size: .875rem; font-weight: 500;
+  padding: .5rem .875rem; border-radius: .5rem;
+  transition: background-color .15s ease, border-color .15s ease;
+  white-space: nowrap;
+}
+.btn-primary { background: var(--color-brand); color: #fff; }
+.btn-primary:hover { background: var(--color-brand-hover); }
+.btn-secondary { background: var(--color-surface); color: var(--color-ink); border: 1px solid var(--color-line); }
+.btn-secondary:hover { background: var(--color-canvas); }
+.btn-ghost { color: var(--color-muted); }
+.btn-ghost:hover { background: var(--color-canvas); color: var(--color-ink); }
+.btn-danger { background: var(--color-danger); color: #fff; }
+.btn-danger:hover { background: var(--color-danger-strong); }
+
+.input {
+  /* `width: 100%` here is a plain class, which outranks Tailwind's `w-auto`
+     utility in the cascade — so every filter dropdown marked `w-auto`
+     silently stretched full-width and stacked vertically, eating a huge
+     amount of screen before any data. Scoped down so an explicit width
+     utility on the element wins, which is what the markup already assumed.
+     This affects every filter bar in the app, not just Leads. */
+  width: 100%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: .5rem;
+  padding: .5rem .75rem;
+  font-size: .875rem;
+  color: var(--color-ink);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-brand);
+  box-shadow: 0 0 0 3px var(--color-brand-soft);
+}
+.input::placeholder { color: var(--color-faint); }
+/* Explicit width utilities beat the 100% default above. */
+.input.w-auto { width: auto; }
+.input.w-full { width: 100%; }
+
+/* Visible focus for keyboard users, without adding noise for mouse users */
+:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+
+/* Skeleton loading */
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.skeleton {
+  background: linear-gradient(90deg, #EEF0F5 25%, #F7F8FC 50%, #EEF0F5 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: .375rem;
+}
+
+/* Drawer motion — fast and subtle, per the brief */
+.drawer-panel { transition: transform .2s cubic-bezier(.4,0,.2,1); }
+.drawer-backdrop { transition: opacity .2s ease; }
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-panel, .drawer-backdrop, .card-hover { transition: none; }
+  .skeleton { animation: none; }
+}
+
+/* Thin scrollbars for the Kanban's horizontal scroll */
+.thin-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+.thin-scroll::-webkit-scrollbar-track { background: transparent; }
+.thin-scroll::-webkit-scrollbar-thumb { background: var(--color-line-strong); border-radius: 4px; }
+
+/* ============================================================
+   Dashboard design system
+   ============================================================
+   One visual language, applied everywhere on the page:
+
+     light page background → white card → subtle border
+       → soft shadow → accent colour → clear typography
+
+   The previous version of this block chased depth with heavy
+   shadows and a colour-matched halo that bled outside every card on
+   hover. Up close that reads as decoration rather than hierarchy, and
+   with nine panels glowing in nine different colours the page had no
+   focal point. Depth here is now carried by one restrained shadow and
+   the step from canvas to white — which is what separates enterprise
+   software from a landing page.
+   ============================================================ */
+
+.dash-card {
+  position: relative;
+  background: var(--color-surface);
+  border: 1px solid rgba(226, 231, 243, 0.9);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(23, 35, 60, 0.04), 0 8px 24px -12px rgba(49, 46, 129, 0.14);
+  transition: box-shadow .2s ease, border-color .2s ease, transform .2s ease;
+}
+.dash-card:hover {
+  box-shadow: 0 1px 2px rgba(23, 35, 60, 0.05), 0 16px 32px -14px rgba(var(--accent-rgb, 108, 79, 247), 0.35);
+  border-color: rgba(var(--accent-rgb, 108, 79, 247), 0.28);
+  /* 1px, not a lift. A card that jumps under the cursor is movement the
+     reader has to absorb before they can read the number on it. */
+  transform: translateY(-1px);
+}
+
+/* The accent a card carries on hover: a barely-there wash of its own
+   colour from the top-right, set per card via --accent-rgb. This replaces
+   the old outer halo — the tint stays inside the card's own edges, so
+   nine cards can each have their own colour without the page looking lit
+   from behind. */
+.dash-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle at 92% 6%, rgba(var(--accent-rgb, 108, 79, 247), 0.07), transparent 55%);
+  opacity: 0;
+  transition: opacity .2s ease;
+  pointer-events: none;
+}
+.dash-glow:hover::after { opacity: 1; }
+
+/* The resting-state micro-gradient on a KPI card — the same idea at a
+   lower opacity, always on, so a card has some life before you touch it. */
+.dash-kpi-wash {
+  background: radial-gradient(circle 150px at 92% 6%, rgba(var(--accent-rgb, 108, 79, 247), 0.10), transparent 60%);
+}
+
+/* An inset row inside a card — activity rows, contact rows, task rows.
+   Having one class for this is what makes those three lists read as the
+   same component rather than three different treatments. */
+.dash-row {
+  background: var(--color-surface-soft);
+  border: 1px solid var(--color-line-soft);
+  border-radius: 10px;
+  transition: background-color .18s ease, border-color .18s ease;
+}
+.dash-row:hover {
+  background: var(--color-brand-faint);
+  border-color: var(--color-brand-border);
+}
+
+/* Filter pills (All / Task / Meeting). */
+.dash-pill {
+  background: var(--color-canvas);
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  color: var(--color-muted);
+  transition: background-color .18s ease, color .18s ease, border-color .18s ease;
+}
+.dash-pill:hover { color: var(--color-ink); }
+.dash-pill[data-active="true"] {
+  background: var(--color-brand-soft);
+  border-color: var(--color-brand-border);
+  color: var(--color-brand);
+}
+
+/* Entrance: a short rise-and-fade, staggered per element via
+   --stagger (index * delay, set inline). Runs once on mount. */
+@keyframes dash-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.dash-enter {
+  animation: dash-rise .4s cubic-bezier(.16,1,.3,1) both;
+  animation-delay: var(--stagger, 0ms);
+}
+
+/* The big KPI figure. Solid ink, not a gradient fill — at 24px a
+   gradient is texture nobody asked for, and it costs contrast. */
+.dash-figure {
+  color: var(--color-ink);
+  letter-spacing: -0.02em;
+}
+
+/* Animated progress fill for the source/collection bars — width
+   transitions in on mount instead of appearing pre-filled. No glow: a
+   7px bar with a shadow under it just looks blurred. */
+.dash-bar-fill { transition: width .8s cubic-bezier(.16,1,.3,1); }
+
+/* ===== Dashboard canvas & accents =====
+   The page sits on a soft colour field (lavender, sky and mint blooms over
+   a faint dot grid) instead of flat grey, so white cards read as floating
+   surfaces. Everything is decorative and behind content. */
+.dash-canvas {
+  min-height: 100%;
+  background:
+    radial-gradient(900px 480px at 8% -6%, rgba(167, 139, 250, 0.22), transparent 60%),
+    radial-gradient(760px 420px at 100% 4%, rgba(56, 189, 248, 0.16), transparent 60%),
+    radial-gradient(820px 520px at 50% 58%, rgba(52, 211, 153, 0.08), transparent 62%),
+    radial-gradient(700px 520px at 0% 100%, rgba(244, 114, 182, 0.10), transparent 60%),
+    radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.07) 1px, transparent 0) 0 0 / 24px 24px,
+    linear-gradient(180deg, #F6F4FF 0%, #F5F8FF 45%, #F7F9FC 100%);
+}
+.dash-hero {
+  background: linear-gradient(110deg, #F1EBFF 0%, #E4DBFF 30%, #D6DEFF 62%, #C7DAFF 100%);
+  border: 1px solid rgba(139, 124, 246, 0.35);
+  box-shadow: 0 1px 2px rgba(23, 35, 60, 0.05), 0 18px 40px -20px rgba(99, 102, 241, 0.55);
+}
+.dark-mode .dash-hero { background: linear-gradient(110deg, var(--color-surface), #1B2440); border-color: var(--color-line); }
+/* A thin gradient bar across the top of a card, in its own accent. */
+.dash-accented { overflow: hidden; }
+.dash-accented::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 3px;
+  background: var(--accent-grad, linear-gradient(90deg, #A78BFA, #6C4FF7));
+  pointer-events: none;
+}
+/* KPI cards: a faint wash of the accent in the top-right corner. */
+.dash-kpi {
+  background:
+    radial-gradient(220px 140px at 100% 0%, rgba(var(--accent-rgb, 108, 79, 247), 0.10), transparent 70%),
+    var(--color-surface);
+}
+/* Needs Attention cards: a gradient bar down the left edge. */
+.dash-leftbar { overflow: hidden; }
+.dash-leftbar::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--accent-grad, linear-gradient(180deg, #FB7185, #E11D48));
+  pointer-events: none;
+}
+
+/* ===== Support Desk workspace =====
+   Calmer than the main dashboard on purpose: an information-dense operations
+   screen reads best on a quiet canvas with crisp white cards, and colour is
+   reserved for meaning (on track / at risk / breached, priority). */
+.sd-canvas {
+  background:
+    radial-gradient(900px 420px at 0% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
+    radial-gradient(700px 380px at 100% 0%, rgba(56, 189, 248, 0.10), transparent 60%),
+    linear-gradient(180deg, #F5F7FF 0%, #F6F8FC 100%);
+}
+.dark-mode .sd-canvas { background: var(--color-canvas); }
+.sd-card {
+  background: var(--color-surface);
+  border: 1px solid rgba(226, 231, 243, 0.95);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(23, 35, 60, 0.04), 0 6px 18px -12px rgba(49, 46, 129, 0.16);
+}
+.sd-row > * { min-width: 0; }
+/* Cards in a dashboard row share the row's height, so no row has ragged gaps. */
+.sd-row > * > .sd-card { height: 100%; }
+.sd-nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-radius: 10px;
+  font-size: 13px; font-weight: 500; color: var(--color-muted);
+  transition: background-color .15s ease, color .15s ease;
+}
+.sd-nav-item:hover { background: rgba(255,255,255,0.8); color: var(--color-ink); }
+.sd-nav-item.is-active {
+  background: #FFFFFF; color: #3B5BFF; font-weight: 600;
+  box-shadow: 0 1px 2px rgba(23,35,60,0.06), inset 3px 0 0 #3B5BFF;
+}
+.sd-nav-item:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 1px; }
+/* Universal list/detail pages carry their own negative page margin; inside
+   the Support shell they sit in a column, so it is neutralised there. */
+.sd-embed > div { margin: 0 !important; }
+.sd-table th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--color-muted); text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--color-line); white-space: nowrap; }
+.sd-table td { font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--color-line-soft); color: var(--color-ink); }
+.sd-table tr:last-child td { border-bottom: none; }
+.sd-table tbody tr:hover td { background: var(--color-brand-faint); }
+
+/* Drill-down targets. Everything on the dashboard that opens records is a
+   real link or button: pointer cursor, a subtle hover, and a visible focus
+   ring for keyboard users. `.dash-stretch` makes a card's main link cover
+   the whole card while secondary links inside it stay clickable on top. */
+.dash-link { cursor: pointer; border-radius: 10px; transition: background-color .15s ease, color .15s ease; }
+.dash-link:hover { color: var(--color-brand); }
+.dash-link:focus-visible,
+.dash-card:focus-visible,
+.dash-row:focus-visible,
+.dash-stretch:focus-visible::after,
+.dash-svg-link:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+.dash-stretch::after { content: ''; position: absolute; inset: 0; border-radius: inherit; z-index: 1; }
+.dash-above { position: relative; z-index: 2; }
+.dash-svg-link:hover text { fill: var(--color-brand); }
+.dash-svg-link:focus { outline: none; }
+.dash-svg-link:focus-visible circle:last-of-type { stroke-width: 3; }
+.dash-menu {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(23, 35, 60, 0.14);
+}
+
+/* Slow ambient drift for the light blooms inside the bottom CTA — the
+   one place on the page where motion runs continuously, slow enough
+   (9–11s) to read as ambient rather than as something asking for
+   attention. */
+@keyframes dash-drift {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50%      { transform: translate(-14px, 10px) scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-card, .dash-glow::after, .dash-bar-fill, .dash-row, .dash-pill { transition: none; }
+  .dash-card:hover { transform: none; }
+  .dash-enter { animation: none; }
+  [class*="animate-[dash-drift"] { animation: none; }
+}
+
+/* ===== Dark mode =====
+   (Dashboard canvas gets a deep version of the same colour field.) */
+.dark-mode .dash-canvas {
+  background:
+    radial-gradient(900px 480px at 8% -6%, rgba(139, 92, 246, 0.18), transparent 60%),
+    radial-gradient(760px 420px at 100% 4%, rgba(56, 189, 248, 0.10), transparent 60%),
+    var(--color-canvas);
+}
+.dark-mode .dash-kpi { background: var(--color-surface); }
+/* ===== Dark mode (base) =====
+   Applied via .dark-mode on <html>, toggled from Appearance settings. */
+html.dark-mode {
+  --color-canvas: #0F1117;
+  --color-surface: #171A21;
+  --color-line: #262A34;
+  --color-line-strong: #333846;
+  --color-ink: #F1F2F6;
+  --color-ink-light: #D8DAE2;
+  --color-muted: #9AA0AE;
+  --color-faint: #6E7484;
+  --color-brand-soft: #1E1B4B;
+  --color-brand-border: #3730A3;
+}
+html.dark-mode body { background: var(--color-canvas); color: var(--color-ink); }
+html.dark-mode .bg-white { background-color: var(--color-surface) !important; }
+html.dark-mode .text-ink { color: var(--color-ink) !important; }
+html.dark-mode .text-slate-400 { color: var(--color-faint) !important; }
+html.dark-mode .text-slate-500 { color: var(--color-muted) !important; }
+html.dark-mode .text-slate-600 { color: var(--color-ink-light) !important; }
+html.dark-mode input, html.dark-mode select, html.dark-mode textarea {
+  background-color: var(--color-surface); color: var(--color-ink);
+}
+html.dark-mode .skeleton {
+  background: linear-gradient(90deg, #1C1F27 25%, #23262F 50%, #1C1F27 75%);
+  background-size: 800px 100%;
+}
+
+/* ---------------------------------------------------------------------------
+   Screen changes
+   - Each new screen fades in quickly (160 ms) instead of snapping, so moving
+     between modules and records feels smooth. It never delays content: the
+     screen is fully usable from the first frame.
+   - The thin loading bar at the top (components/TopProgress.jsx).
+   Both are switched off for people who ask their system for less motion.
+   --------------------------------------------------------------------------- */
+@keyframes icrm-screen-in {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+.icrm-screen-in { animation: icrm-screen-in 160ms ease-out both; }
+
+@keyframes icrm-progress-run {
+  0% { width: 0; }
+  30% { width: 45%; }
+  100% { width: 88%; }
+}
+.icrm-progress-run { animation: icrm-progress-run 4s cubic-bezier(0.1, 0.7, 0.2, 1) forwards; }
+.icrm-progress-done { width: 100%; opacity: 0; transition: width 150ms ease-out, opacity 250ms ease 100ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .icrm-screen-in { animation: none; }
+  .icrm-progress-run { animation: none; width: 60%; }
+}
+
+/* Field team map (v1.2): vector map, glowing pins, hover cards */
+.icrm-gl-map { border: 1px solid var(--color-brand-border); background: linear-gradient(135deg, var(--color-brand-faint), var(--color-canvas-alt)); box-shadow: 0 18px 40px -28px rgba(108, 79, 247, .6), 0 1px 2px rgba(23, 35, 60, .05); }
+.icrm-gl-map .maplibregl-ctrl-group { border-radius: 12px; overflow: hidden; box-shadow: 0 6px 18px -8px rgba(23, 35, 60, .45); }
+.icrm-gl-map .maplibregl-ctrl-group button { width: 34px; height: 34px; }
+.icrm-gl-map .maplibregl-ctrl-attrib { font-size: 10px; }
+.icrm-gl-fit { position: absolute; top: 88px; right: 10px; z-index: 3; width: 34px; height: 34px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; background: #fff; color: #17233C; box-shadow: 0 6px 18px -8px rgba(23, 35, 60, .45); }
+.icrm-gl-fit:hover { color: var(--color-brand); }
+.icrm-gl-pin { position: relative; width: 36px; height: 44px; filter: drop-shadow(0 6px 10px rgba(23, 35, 60, .28)); transition: transform .12s ease; }
+.icrm-gl-pin:hover, .icrm-gl-pin:focus-visible { transform: translateY(-2px) scale(1.06); outline: none; z-index: 2; }
+.icrm-gl-face { position: absolute; left: 0; top: 0; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font: 700 12px/1 system-ui, sans-serif; letter-spacing: .02em; background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--pin) 65%, #fff), var(--pin) 62%); border: 2.5px solid #fff; box-shadow: 0 0 0 4px color-mix(in srgb, var(--pin) 22%, transparent), 0 0 18px color-mix(in srgb, var(--pin) 65%, transparent); z-index: 1; }
+.icrm-gl-tip { position: absolute; left: 50%; bottom: 1px; width: 12px; height: 12px; transform: translateX(-50%) rotate(45deg); background: var(--pin); border-right: 2.5px solid #fff; border-bottom: 2.5px solid #fff; border-radius: 0 0 3px 0; }
+.icrm-gl-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--pin); border: 2px solid #fff; box-shadow: 0 0 0 3px color-mix(in srgb, var(--pin) 25%, transparent), 0 1px 4px rgba(0, 0, 0, .3); }
+.icrm-gl-end { width: 15px; height: 15px; border-radius: 50%; border: 3px solid #fff; background: var(--pin); box-shadow: 0 2px 8px rgba(23, 35, 60, .35); }
+.icrm-gl-end.end { box-shadow: 0 0 0 5px color-mix(in srgb, var(--pin) 25%, transparent), 0 2px 8px rgba(23, 35, 60, .35); }
+.icrm-gl-hc .maplibregl-popup-content { border-radius: 12px; padding: 9px 12px; box-shadow: 0 14px 30px -12px rgba(23, 35, 60, .45); border: 1px solid var(--color-brand-border); font: 12px/1.45 inherit; color: #17233C; }
+.icrm-gl-hc .maplibregl-popup-tip { display: none; }
+.icrm-gl-hc-t { font-weight: 650; font-size: 13px; }
+.icrm-gl-hc-s { color: #667085; }
+.dark-mode .icrm-gl-fit { background: var(--color-surface); color: var(--color-ink); }
+
+/* Scan a visiting card */
+.icrm-scan-drop { display: flex; align-items: center; justify-content: center; min-height: 190px; border-radius: 16px; padding: 12px; border: 2px dashed var(--color-brand-border); background: linear-gradient(135deg, var(--color-brand-faint), var(--color-canvas-alt)); transition: border-color .15s, background .15s; }
+.icrm-scan-drop.over { border-color: var(--color-brand); background: var(--color-brand-soft); }
+.icrm-scan-icon { position: relative; width: 64px; height: 64px; border-radius: 20px; display: inline-flex; align-items: center; justify-content: center; color: #fff; background: linear-gradient(135deg, var(--color-brand), var(--color-special)); box-shadow: 0 0 0 7px rgba(108, 79, 247, .1), 0 16px 30px -14px rgba(108, 79, 247, .9); overflow: hidden; }
+.icrm-scan-icon.beam { width: 80px; height: 80px; }
+.icrm-scan-icon.beam::after { content: ''; position: absolute; left: 0; right: 0; height: 3px; background: #67E8F9; box-shadow: 0 0 12px #67E8F9; animation: icrmscan 1.4s ease-in-out infinite; }
+@keyframes icrmscan { 0% { top: 12%; } 50% { top: 85%; } 100% { top: 12%; } }
+@media (prefers-reduced-motion: reduce) { .icrm-scan-icon.beam::after { animation: none; top: 50%; } }

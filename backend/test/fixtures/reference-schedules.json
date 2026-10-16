@@ -1,0 +1,738 @@
+[
+ {
+  "name": "reducing EMI, month-end start",
+  "params": {
+   "principal_paise": 10000000,
+   "rate_e4": 120000,
+   "tenure": 12,
+   "frequency": "monthly",
+   "interest_method": "reducing",
+   "repayment_type": "emi",
+   "start_date": "2026-01-31"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2026-02-28",
+    "principal_paise": 788488,
+    "interest_paise": 100000
+   },
+   {
+    "seq": 2,
+    "due_date": "2026-03-31",
+    "principal_paise": 796373,
+    "interest_paise": 92115
+   },
+   {
+    "seq": 3,
+    "due_date": "2026-04-30",
+    "principal_paise": 804337,
+    "interest_paise": 84151
+   },
+   {
+    "seq": 4,
+    "due_date": "2026-05-31",
+    "principal_paise": 812380,
+    "interest_paise": 76108
+   },
+   {
+    "seq": 5,
+    "due_date": "2026-06-30",
+    "principal_paise": 820504,
+    "interest_paise": 67984
+   },
+   {
+    "seq": 6,
+    "due_date": "2026-07-31",
+    "principal_paise": 828709,
+    "interest_paise": 59779
+   },
+   {
+    "seq": 7,
+    "due_date": "2026-08-31",
+    "principal_paise": 836996,
+    "interest_paise": 51492
+   },
+   {
+    "seq": 8,
+    "due_date": "2026-09-30",
+    "principal_paise": 845366,
+    "interest_paise": 43122
+   },
+   {
+    "seq": 9,
+    "due_date": "2026-10-31",
+    "principal_paise": 853820,
+    "interest_paise": 34668
+   },
+   {
+    "seq": 10,
+    "due_date": "2026-11-30",
+    "principal_paise": 862358,
+    "interest_paise": 26130
+   },
+   {
+    "seq": 11,
+    "due_date": "2026-12-31",
+    "principal_paise": 870981,
+    "interest_paise": 17507
+   },
+   {
+    "seq": 12,
+    "due_date": "2027-01-31",
+    "principal_paise": 879688,
+    "interest_paise": 8797
+   }
+  ]
+ },
+ {
+  "name": "reducing EMI, leap-day start, 36 months",
+  "params": {
+   "principal_paise": 50000000,
+   "rate_e4": 145000,
+   "tenure": 36,
+   "frequency": "monthly",
+   "interest_method": "reducing",
+   "repayment_type": "emi",
+   "start_date": "2024-02-29"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2024-03-29",
+    "principal_paise": 1116882,
+    "interest_paise": 604167
+   },
+   {
+    "seq": 2,
+    "due_date": "2024-04-29",
+    "principal_paise": 1130378,
+    "interest_paise": 590671
+   },
+   {
+    "seq": 3,
+    "due_date": "2024-05-29",
+    "principal_paise": 1144037,
+    "interest_paise": 577012
+   },
+   {
+    "seq": 4,
+    "due_date": "2024-06-29",
+    "principal_paise": 1157861,
+    "interest_paise": 563188
+   },
+   {
+    "seq": 5,
+    "due_date": "2024-07-29",
+    "principal_paise": 1171851,
+    "interest_paise": 549198
+   },
+   {
+    "seq": 6,
+    "due_date": "2024-08-29",
+    "principal_paise": 1186011,
+    "interest_paise": 535038
+   },
+   {
+    "seq": 7,
+    "due_date": "2024-09-29",
+    "principal_paise": 1200342,
+    "interest_paise": 520707
+   },
+   {
+    "seq": 8,
+    "due_date": "2024-10-29",
+    "principal_paise": 1214846,
+    "interest_paise": 506203
+   },
+   {
+    "seq": 9,
+    "due_date": "2024-11-29",
+    "principal_paise": 1229526,
+    "interest_paise": 491523
+   },
+   {
+    "seq": 10,
+    "due_date": "2024-12-29",
+    "principal_paise": 1244382,
+    "interest_paise": 476667
+   },
+   {
+    "seq": 11,
+    "due_date": "2025-01-29",
+    "principal_paise": 1259419,
+    "interest_paise": 461630
+   },
+   {
+    "seq": 12,
+    "due_date": "2025-02-28",
+    "principal_paise": 1274637,
+    "interest_paise": 446412
+   },
+   {
+    "seq": 13,
+    "due_date": "2025-03-29",
+    "principal_paise": 1290039,
+    "interest_paise": 431010
+   },
+   {
+    "seq": 14,
+    "due_date": "2025-04-29",
+    "principal_paise": 1305627,
+    "interest_paise": 415422
+   },
+   {
+    "seq": 15,
+    "due_date": "2025-05-29",
+    "principal_paise": 1321403,
+    "interest_paise": 399646
+   },
+   {
+    "seq": 16,
+    "due_date": "2025-06-29",
+    "principal_paise": 1337370,
+    "interest_paise": 383679
+   },
+   {
+    "seq": 17,
+    "due_date": "2025-07-29",
+    "principal_paise": 1353530,
+    "interest_paise": 367519
+   },
+   {
+    "seq": 18,
+    "due_date": "2025-08-29",
+    "principal_paise": 1369885,
+    "interest_paise": 351164
+   },
+   {
+    "seq": 19,
+    "due_date": "2025-09-29",
+    "principal_paise": 1386438,
+    "interest_paise": 334611
+   },
+   {
+    "seq": 20,
+    "due_date": "2025-10-29",
+    "principal_paise": 1403190,
+    "interest_paise": 317859
+   },
+   {
+    "seq": 21,
+    "due_date": "2025-11-29",
+    "principal_paise": 1420146,
+    "interest_paise": 300903
+   },
+   {
+    "seq": 22,
+    "due_date": "2025-12-29",
+    "principal_paise": 1437306,
+    "interest_paise": 283743
+   },
+   {
+    "seq": 23,
+    "due_date": "2026-01-29",
+    "principal_paise": 1454673,
+    "interest_paise": 266376
+   },
+   {
+    "seq": 24,
+    "due_date": "2026-02-28",
+    "principal_paise": 1472250,
+    "interest_paise": 248799
+   },
+   {
+    "seq": 25,
+    "due_date": "2026-03-29",
+    "principal_paise": 1490040,
+    "interest_paise": 231009
+   },
+   {
+    "seq": 26,
+    "due_date": "2026-04-29",
+    "principal_paise": 1508045,
+    "interest_paise": 213004
+   },
+   {
+    "seq": 27,
+    "due_date": "2026-05-29",
+    "principal_paise": 1526267,
+    "interest_paise": 194782
+   },
+   {
+    "seq": 28,
+    "due_date": "2026-06-29",
+    "principal_paise": 1544709,
+    "interest_paise": 176340
+   },
+   {
+    "seq": 29,
+    "due_date": "2026-07-29",
+    "principal_paise": 1563375,
+    "interest_paise": 157674
+   },
+   {
+    "seq": 30,
+    "due_date": "2026-08-29",
+    "principal_paise": 1582265,
+    "interest_paise": 138784
+   },
+   {
+    "seq": 31,
+    "due_date": "2026-09-29",
+    "principal_paise": 1601384,
+    "interest_paise": 119665
+   },
+   {
+    "seq": 32,
+    "due_date": "2026-10-29",
+    "principal_paise": 1620735,
+    "interest_paise": 100314
+   },
+   {
+    "seq": 33,
+    "due_date": "2026-11-29",
+    "principal_paise": 1640318,
+    "interest_paise": 80731
+   },
+   {
+    "seq": 34,
+    "due_date": "2026-12-29",
+    "principal_paise": 1660139,
+    "interest_paise": 60910
+   },
+   {
+    "seq": 35,
+    "due_date": "2027-01-29",
+    "principal_paise": 1680199,
+    "interest_paise": 40850
+   },
+   {
+    "seq": 36,
+    "due_date": "2027-02-28",
+    "principal_paise": 1700495,
+    "interest_paise": 20548
+   }
+  ]
+ },
+ {
+  "name": "flat EMI, 18 months",
+  "params": {
+   "principal_paise": 25000000,
+   "rate_e4": 105000,
+   "tenure": 18,
+   "frequency": "monthly",
+   "interest_method": "flat",
+   "repayment_type": "emi",
+   "start_date": "2026-03-15"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2026-04-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 2,
+    "due_date": "2026-05-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 3,
+    "due_date": "2026-06-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 4,
+    "due_date": "2026-07-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 5,
+    "due_date": "2026-08-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 6,
+    "due_date": "2026-09-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 7,
+    "due_date": "2026-10-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 8,
+    "due_date": "2026-11-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 9,
+    "due_date": "2026-12-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 10,
+    "due_date": "2027-01-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 11,
+    "due_date": "2027-02-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 12,
+    "due_date": "2027-03-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 13,
+    "due_date": "2027-04-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 14,
+    "due_date": "2027-05-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 15,
+    "due_date": "2027-06-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 16,
+    "due_date": "2027-07-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 17,
+    "due_date": "2027-08-15",
+    "principal_paise": 1388888,
+    "interest_paise": 218750
+   },
+   {
+    "seq": 18,
+    "due_date": "2027-09-15",
+    "principal_paise": 1388904,
+    "interest_paise": 218750
+   }
+  ]
+ },
+ {
+  "name": "zero interest with remainder",
+  "params": {
+   "principal_paise": 10000001,
+   "rate_e4": 0,
+   "tenure": 10,
+   "frequency": "monthly",
+   "interest_method": "reducing",
+   "repayment_type": "emi",
+   "start_date": "2026-05-01"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2026-06-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 2,
+    "due_date": "2026-07-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 3,
+    "due_date": "2026-08-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 4,
+    "due_date": "2026-09-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 5,
+    "due_date": "2026-10-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 6,
+    "due_date": "2026-11-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 7,
+    "due_date": "2026-12-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 8,
+    "due_date": "2027-01-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 9,
+    "due_date": "2027-02-01",
+    "principal_paise": 1000000,
+    "interest_paise": 0
+   },
+   {
+    "seq": 10,
+    "due_date": "2027-03-01",
+    "principal_paise": 1000001,
+    "interest_paise": 0
+   }
+  ]
+ },
+ {
+  "name": "odd amount, 7 months",
+  "params": {
+   "principal_paise": 1234567,
+   "rate_e4": 97500,
+   "tenure": 7,
+   "frequency": "monthly",
+   "interest_method": "reducing",
+   "repayment_type": "emi",
+   "start_date": "2026-06-10"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2026-07-10",
+    "principal_paise": 172114,
+    "interest_paise": 10031
+   },
+   {
+    "seq": 2,
+    "due_date": "2026-08-10",
+    "principal_paise": 173513,
+    "interest_paise": 8632
+   },
+   {
+    "seq": 3,
+    "due_date": "2026-09-10",
+    "principal_paise": 174922,
+    "interest_paise": 7223
+   },
+   {
+    "seq": 4,
+    "due_date": "2026-10-10",
+    "principal_paise": 176344,
+    "interest_paise": 5801
+   },
+   {
+    "seq": 5,
+    "due_date": "2026-11-10",
+    "principal_paise": 177776,
+    "interest_paise": 4369
+   },
+   {
+    "seq": 6,
+    "due_date": "2026-12-10",
+    "principal_paise": 179221,
+    "interest_paise": 2924
+   },
+   {
+    "seq": 7,
+    "due_date": "2027-01-10",
+    "principal_paise": 180677,
+    "interest_paise": 1468
+   }
+  ]
+ },
+ {
+  "name": "balloon, reducing",
+  "params": {
+   "principal_paise": 200000000,
+   "rate_e4": 110000,
+   "tenure": 12,
+   "frequency": "monthly",
+   "interest_method": "reducing",
+   "repayment_type": "balloon",
+   "start_date": "2026-08-01"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2026-09-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 2,
+    "due_date": "2026-10-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 3,
+    "due_date": "2026-11-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 4,
+    "due_date": "2026-12-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 5,
+    "due_date": "2027-01-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 6,
+    "due_date": "2027-02-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 7,
+    "due_date": "2027-03-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 8,
+    "due_date": "2027-04-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 9,
+    "due_date": "2027-05-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 10,
+    "due_date": "2027-06-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 11,
+    "due_date": "2027-07-01",
+    "principal_paise": 0,
+    "interest_paise": 1833333
+   },
+   {
+    "seq": 12,
+    "due_date": "2027-08-01",
+    "principal_paise": 200000000,
+    "interest_paise": 1833333
+   }
+  ]
+ },
+ {
+  "name": "balloon, flat, quarterly",
+  "params": {
+   "principal_paise": 100000000,
+   "rate_e4": 90000,
+   "tenure": 8,
+   "frequency": "quarterly",
+   "interest_method": "flat",
+   "repayment_type": "balloon",
+   "start_date": "2026-01-01"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2026-04-01",
+    "principal_paise": 0,
+    "interest_paise": 2250000
+   },
+   {
+    "seq": 2,
+    "due_date": "2026-07-01",
+    "principal_paise": 0,
+    "interest_paise": 2250000
+   },
+   {
+    "seq": 3,
+    "due_date": "2026-10-01",
+    "principal_paise": 0,
+    "interest_paise": 2250000
+   },
+   {
+    "seq": 4,
+    "due_date": "2027-01-01",
+    "principal_paise": 0,
+    "interest_paise": 2250000
+   },
+   {
+    "seq": 5,
+    "due_date": "2027-04-01",
+    "principal_paise": 0,
+    "interest_paise": 2250000
+   },
+   {
+    "seq": 6,
+    "due_date": "2027-07-01",
+    "principal_paise": 0,
+    "interest_paise": 2250000
+   },
+   {
+    "seq": 7,
+    "due_date": "2027-10-01",
+    "principal_paise": 0,
+    "interest_paise": 2250000
+   },
+   {
+    "seq": 8,
+    "due_date": "2028-01-01",
+    "principal_paise": 100000000,
+    "interest_paise": 2250000
+   }
+  ]
+ },
+ {
+  "name": "one-time maturity",
+  "params": {
+   "principal_paise": 10000000,
+   "rate_e4": 120000,
+   "tenure": 6,
+   "frequency": "monthly",
+   "interest_method": "flat",
+   "repayment_type": "maturity",
+   "start_date": "2026-02-28"
+  },
+  "expected": [
+   {
+    "seq": 1,
+    "due_date": "2026-08-28",
+    "principal_paise": 10000000,
+    "interest_paise": 600000
+   }
+  ]
+ }
+]

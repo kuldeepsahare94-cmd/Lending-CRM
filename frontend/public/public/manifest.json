@@ -1,0 +1,12 @@
+{
+  "name": "CounselDesk - Admission & Revenue CRM",
+  "short_name": "CounselDesk",
+  "description": "Education consultancy CRM for leads, applications, and revenue.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#14213D",
+  "theme_color": "#14213D",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
