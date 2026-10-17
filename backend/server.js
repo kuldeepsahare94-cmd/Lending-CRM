@@ -44,6 +44,7 @@ require('./db-phase51-geo');
 require('./db-phase52-lending-industry');
 require('./db-phase53-loans');
 require('./db-phase54-loan-collections');
+require('./db-phase55-loan-settlements-collateral');
 
 
 const app = express();

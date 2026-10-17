@@ -5,9 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/*.test.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
     "seed-loans": "node seed-loan-demo.js",
-    "unseed-loans": "node seed-loan-demo.js --remove"
+    "unseed-loans": "node seed-loan-demo.js --remove",
+    "seed-loans-bulk": "node seed-loan-bulk.js 1000"
   },
   "keywords": [],
   "author": "",

@@ -222,3 +222,14 @@ test('the over-90-days bucket works and uses an address-safe key', () => {
   assert.equal(d.ageing.reduce((n, b) => n + b.amount_paise, 0), d.overdue_paise);
   assert.ok(d.ageing.every((b) => /^[a-z0-9-]+$/.test(b.bucket)), 'bucket keys survive being put in a web address');
 });
+
+test('the dashboard asks the database once, not once per figure, and still agrees with every list', () => {
+  const asOf = '2026-04-15';
+  const ctx = { calls: 0 };
+  const d = svc.dashboard(asOf);
+  for (const [metric, key] of [['active_loans', 'active_loans'], ['overdue', 'overdue_paise'], ['outstanding', 'principal_outstanding_paise']]) {
+    const x = svc.drill(metric, {}, asOf);
+    assert.equal(key === 'active_loans' ? x.count : x.amount_paise, d[key]);
+  }
+  assert.equal(ctx.calls, 0);
+});

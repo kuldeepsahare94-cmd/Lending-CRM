@@ -21,6 +21,8 @@ const db = require('./db');
 const engine = require('./services/loan/engine');
 const svc = require('./services/loan/service');
 const col = require('./services/loan/collections');
+const stl = require('./services/loan/settlements');
+const cat = require('./services/loan/collateral');
 
 const KEY = 'demo_seed';
 const T = new Date().toISOString().slice(0, 10);
@@ -31,41 +33,47 @@ const owed = (x) => x.principal_paise + x.interest_paise + x.fees_paise;
 
 function remove() {
   const row = db.prepare('SELECT value FROM loan_settings WHERE key = ?').get(KEY);
-  const made = row ? JSON.parse(row.value) : { accounts: [], lenders: [], calls: [], tasks: [] };
-  const loans = db.prepare("SELECT id FROM loans WHERE external_reference = 'DEMO'").all().map((l) => l.id);
+  const made = Object.assign({ accounts: [], contacts: [], lenders: [], calls: [], tasks: [], docs: [] }, row ? JSON.parse(row.value) : {});
+  const chunk = (a, n = 400) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+  const inList = (ids) => ids.map(() => '?').join(',');
+  const count = db.prepare("SELECT COUNT(*) AS n FROM loans WHERE external_reference = 'DEMO'").get().n;
   db.transaction(() => {
-    for (const id of loans) db.prepare('DELETE FROM loan_audit_log WHERE loan_id = ?').run(id);
-    db.prepare("DELETE FROM loans WHERE external_reference = 'DEMO'").run();
-    for (const id of made.calls) db.prepare('DELETE FROM calls WHERE id = ?').run(id);
-    for (const id of made.tasks) db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
-    for (const id of made.accounts) {
-      if (!db.prepare("SELECT id FROM loans WHERE borrower_module = 'accounts' AND borrower_id = ?").get(id)) db.prepare('DELETE FROM accounts WHERE id = ?').run(id);
+    for (const lid of made.lenders) {
+      db.prepare("DELETE FROM loan_audit_log WHERE entity_type = 'settlement' AND entity_id IN (SELECT id FROM loan_settlement_batches WHERE lender_id = ?)").run(lid);
+      db.prepare('DELETE FROM loan_settlement_batches WHERE lender_id = ?').run(lid);
     }
-    for (const id of made.lenders) {
-      if (!db.prepare('SELECT id FROM loans WHERE lender_id = ?').get(id)) {
-        db.prepare('DELETE FROM loan_lenders WHERE id = ?').run(id);
-        db.prepare("DELETE FROM loan_audit_log WHERE entity_type = 'lender' AND entity_id = ?").run(id);
-      }
+    db.prepare("DELETE FROM loan_audit_log WHERE loan_id IN (SELECT id FROM loans WHERE external_reference = 'DEMO')").run();
+    db.prepare("DELETE FROM loans WHERE external_reference = 'DEMO'").run();
+    for (const part of chunk(made.docs)) db.prepare(`DELETE FROM documents WHERE id IN (${inList(part)})`).run(...part);
+    for (const part of chunk(made.calls)) db.prepare(`DELETE FROM calls WHERE id IN (${inList(part)})`).run(...part);
+    for (const part of chunk(made.tasks)) db.prepare(`DELETE FROM tasks WHERE id IN (${inList(part)})`).run(...part);
+    for (const part of chunk(made.accounts)) db.prepare(`DELETE FROM accounts WHERE id IN (${inList(part)}) AND id NOT IN (SELECT borrower_id FROM loans WHERE borrower_module = 'accounts')`).run(...part);
+    for (const part of chunk(made.contacts)) db.prepare(`DELETE FROM contacts WHERE id IN (${inList(part)}) AND id NOT IN (SELECT borrower_id FROM loans WHERE borrower_module = 'contacts')`).run(...part);
+    for (const part of chunk(made.lenders)) {
+      db.prepare(`DELETE FROM loan_audit_log WHERE entity_type = 'lender' AND entity_id IN (${inList(part)})`).run(...part);
+      db.prepare(`DELETE FROM loan_lenders WHERE id IN (${inList(part)}) AND id NOT IN (SELECT lender_id FROM loans WHERE lender_id IS NOT NULL)`).run(...part);
     }
     db.prepare('DELETE FROM loan_settings WHERE key = ?').run(KEY);
   })();
-  console.log(`Removed ${loans.length} sample loans and the records created with them.`);
+  console.log(`Removed ${count} sample loans and the records created with them.`);
 }
 
 function seed() {
   if (db.prepare("SELECT id FROM loans WHERE external_reference = 'DEMO' LIMIT 1").get()) {
     console.log('Sample loans are already there. Run with --remove first to start again.'); return;
   }
-  const made = { accounts: [], lenders: [], calls: [], tasks: [] };
+  const made = { accounts: [], lenders: [], calls: [], tasks: [], docs: [] };
   const users = db.prepare('SELECT id FROM users WHERE active = 1 ORDER BY id LIMIT 3').all().map((u) => u.id);
   const account = (name) => { const id = Number(db.prepare('INSERT INTO accounts (account_name) VALUES (?)').run(name).lastInsertRowid); made.accounts.push(id); return id; };
   const lender = (name, type) => { const l = svc.createLender({ name, party_type: type, settlement_frequency: 'Monthly' }, users[0]); made.lenders.push(l.id); return l.id; };
   const sunrise = lender('Sunrise Capital (sample)', 'NBFC'), heritage = lender('Heritage Finance (sample)', 'Bank');
 
   let n = 0;
+  const ids = {};
   const loan = (name, o) => {
     const l = svc.createLoan({ borrower_module: 'accounts', borrower_id: account(name), business_model: 'direct', frequency: 'monthly', interest_method: 'reducing',
       repayment_type: 'emi', external_reference: 'DEMO', collection_agent_id: users.length ? users[n++ % users.length] : null, ...o }, users[0]);
+    ids[name.split(' (')[0]] = l.loan.id;
     return l.loan.id;
   };
   const insts = (id) => svc.getLoan(id, T).installments;
@@ -136,10 +144,42 @@ function seed() {
   // 13. Current: nothing due yet
   id = loan('Kapoor Realty (sample)', { amount: '900000', rate_percent: '10.5', tenure: 36, start_date: startForFirstDue(-10), disbursement_date: addDays(T, -20) });
 
+
+  // ---- Collateral
+  const cl = (name, type, description, owner, holder, value, lien = 'Clear') => cat.create(ids[name], { collateral_type: type, description, legal_owner: owner, mortgage_holder: holder, value, valuation_date: addDays(T, -40), lien_status: lien }, users[0]);
+  cl('Sharma Traders', 'Commercial property', 'Shop 14, Main Road', 'Sharma Traders', 'Our company (sample)', '1200000', 'Mortgage registered');
+  cl('Patel Estates', 'Land', 'Plot 22, Highway Road', 'Patel Estates', 'Our company (sample)', '300000', 'Mortgage registered');
+  cl('Kulkarni Hardware', 'Machinery', 'CNC lathe, serial KL-2291', 'Kulkarni Hardware', 'Our company (sample)', '450000');
+  cl('Deshmukh Agro', 'Vehicle', 'Tractor, MH-31 reg. sample', 'Deshmukh Agro', 'Sunrise Capital (sample)', '650000', 'Encumbered');
+  cl('Mehta Logistics', 'Vehicle', 'Two trucks, fleet sample', 'Mehta Logistics', 'Heritage Finance (sample)', '1500000', 'Mortgage registered');
+  cl('Iyer Constructions', 'Land', 'Survey 118, Wardha Road', 'Iyer Constructions', 'Heritage Finance (sample)', '3500000', 'Mortgage registered');
+  cl('Iyer Constructions', 'Commercial property', 'Office unit 3B', 'Iyer Constructions', 'Heritage Finance (sample)', '1200000');
+  cl('Rao Developers', 'Residential property', 'Flat 402, Sunrise Heights', 'Rao Developers', 'Sunrise Capital (sample)', '1100000', 'Mortgage registered');
+  // A sample document link on two items, so the Documents panel has something to show.
+  for (const c of cat.list({}).rows.filter((r) => /Shop 14|Plot 22/.test(r.description))) {
+    made.docs.push(Number(db.prepare(`INSERT INTO documents (title, external_url, related_module, related_record_id, description, uploaded_by) VALUES (?,?,?,?,?,?)`)
+      .run('Title deed copy (sample link)', 'https://example.com/sample-title-deed', 'loan_collateral', c.id, 'Sample document', users[0]).lastInsertRowid));
+  }
+  const rel = cl('Gupta Motors', 'Vehicle', 'Delivery van, sample', 'Gupta Motors', 'Our company (sample)', '180000');
+  cat.release(rel.id, 'Loan fully paid, original papers returned', users[0]);
+
+  // ---- Lender settlements
+  const payAt = (name, amount, ref, daysAgo = 1) => svc.postReceipt(ids[name], { amount, payment_date: addDays(T, -daysAgo), reference: ref, method: 'Bank transfer', payer: 'Borrower' }, users[0]);
+  const b1 = stl.createBatch(sunrise, {}, users[0]);                       // earlier collections, fully settled
+  stl.remit(b1.id, { reference: 'UTR-SUNRISE-0001', date: addDays(T, -5) }, users[0]); stl.reconcile(b1.id, users[0]);
+  const b2 = stl.createBatch(heritage, { deduction: '150', deduction_reason: 'Agreed legal notice cost' }, users[0]);   // remitted, awaiting reconciliation
+  stl.remit(b2.id, { reference: 'UTR-HERITAGE-0007', date: addDays(T, -1) }, users[0]);
+  payAt('Rao Developers', '3000', 'RA-2'); payAt('Deshmukh Agro', '5000', 'DE-2');
+  stl.createBatch(sunrise, {}, users[0]);                                  // pending
+  const ra2 = db.prepare("SELECT id FROM loan_receipts WHERE reference = 'RA-2'").get();
+  svc.reverseReceipt(ids['Rao Developers'], ra2.id, 'Duplicate transfer returned by bank', users[0]);   // reversed after settlement: a clawback is waiting
+  payAt('Deshmukh Agro', '8000', 'DE-3', 0);
+
   db.prepare('DELETE FROM loan_settings WHERE key = ?').run(KEY);
   db.prepare('INSERT INTO loan_settings (key, value) VALUES (?, ?)').run(KEY, JSON.stringify(made));
   const d = svc.dashboard(T);
-  console.log(`Added ${n} sample loans. Dashboard now shows ${d.active_loans} active loans, ${d.overdue_loans} overdue (₹${money(d.overdue_paise)}), ${d.draft_loans} draft.`);
+  const sm = stl.summary();
+  console.log(`Added ${n} sample loans, collateral and lender settlements (₹${money(sm.totals.payable_paise)} payable to lenders). Dashboard now shows ${d.active_loans} active loans, ${d.overdue_loans} overdue (₹${money(d.overdue_paise)}), ${d.draft_loans} draft.`);
 }
 
 if (process.argv.includes('--remove')) remove(); else seed();

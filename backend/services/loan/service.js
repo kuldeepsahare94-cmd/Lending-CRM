@@ -215,11 +215,19 @@ const DRILLS = {
   unallocated: { title: 'Unallocated credit', kind: 'receipts', why: 'Payments received that were more than the installments due. The amount is the part not yet applied.' },
 };
 
+// Work out the loan list and the open installments once per request, however many figures are asked for.
+function makeCtx(asOf) {
+  const memo = {};
+  const once = (k, f) => { if (!(k in memo)) memo[k] = f(); return memo[k]; };
+  return { loans: () => once('loans', () => listLoans({}, asOf)), open: (until) => once('open' + until, () => openInstallments(asOf, until)) };
+}
+
 function drill(metric, q = {}, asOf = today()) {
   const def = DRILLS[metric];
   if (!def) throw new LoanError('Unknown dashboard figure: ' + metric, 404);
   const next7 = engine.addPeriods(asOf, 1, 'weekly');
-  const loans = () => listLoans({}, asOf);
+  const ctx = q.__ctx || makeCtx(asOf);
+  const loans = () => ctx.loans();
   let rows, amount, title = def.title, filters = {};
   if (metric === 'active_loans') { rows = loans().filter((l) => ACTIVE.includes(l.status)); amount = sumOf(rows, (l) => l.principal_outstanding_paise); }
   else if (metric === 'outstanding') { rows = loans().filter((l) => ACTIVE.includes(l.status) && l.principal_outstanding_paise > 0); amount = sumOf(rows, (l) => l.principal_outstanding_paise); }
@@ -228,7 +236,7 @@ function drill(metric, q = {}, asOf = today()) {
     if (!q.model) throw new LoanError('Choose a business model.');
     rows = loans().filter((l) => ACTIVE.includes(l.status) && l.business_model === q.model); amount = sumOf(rows, (l) => l.principal_outstanding_paise); filters.model = q.model;
   } else if (metric === 'overdue') {
-    rows = openInstallments(asOf, asOf).filter((x) => x.status === 'Overdue');
+    rows = ctx.open(asOf).filter((x) => x.status === 'Overdue');
     if (q.bucket) {
       const bk = BUCKETS.find((b) => b[0] === q.bucket);
       if (!bk) throw new LoanError('Unknown ageing bucket: ' + q.bucket);
@@ -236,8 +244,8 @@ function drill(metric, q = {}, asOf = today()) {
       filters.bucket = q.bucket; title = 'Overdue by ' + BUCKET_LABEL[q.bucket];
     }
     amount = sumOf(rows, (x) => x.amount_paise);
-  } else if (metric === 'due_today') { rows = openInstallments(asOf, asOf).filter((x) => x.due_date === asOf); amount = sumOf(rows, (x) => x.amount_paise); }
-  else if (metric === 'due_soon') { rows = openInstallments(asOf, next7).filter((x) => x.due_date >= asOf); amount = sumOf(rows, (x) => x.amount_paise); }
+  } else if (metric === 'due_today') { rows = ctx.open(asOf).filter((x) => x.due_date === asOf); amount = sumOf(rows, (x) => x.amount_paise); }
+  else if (metric === 'due_soon') { rows = ctx.open(next7).filter((x) => x.due_date >= asOf); amount = sumOf(rows, (x) => x.amount_paise); }
   else if (metric === 'collected_month') { rows = listReceipts({ status: 'Posted', month: asOf.slice(0, 7) }); amount = sumOf(rows, (r) => r.amount_paise); }
   else { rows = listReceipts({ status: 'Posted', unallocated: true }); amount = sumOf(rows, (r) => r.unallocated_paise); }
   const loanIds = new Set(rows.map((r) => (def.kind === 'loans' ? r.id : r.loan_id)));
@@ -245,9 +253,10 @@ function drill(metric, q = {}, asOf = today()) {
 }
 
 function dashboard(asOf = today()) {
-  const all = listLoans({}, asOf);
+  const ctx = makeCtx(asOf);
+  const all = ctx.loans();
   const active = all.filter((l) => ACTIVE.includes(l.status));
-  const d = (m, q) => drill(m, q, asOf);
+  const d = (m, q) => drill(m, { ...q, __ctx: ctx }, asOf);
   const overdue = d('overdue');
   const byLoan = new Map();
   for (const x of overdue.rows) {
