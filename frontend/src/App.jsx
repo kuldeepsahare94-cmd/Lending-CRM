@@ -78,6 +78,10 @@ const LoanLenders = loanPage('Lenders');
 const LoanDrill = loanPage('LoanDrill');
 const LoanPayments = loanPage('LoanPayments');
 const LoanCollections = loanPage('LoanCollections');
+const LoanSettlements = loanPage('LoanSettlements');
+const LoanCollateral = loanPage('LoanCollateral');
+const LoanBorrowers = loanPage('LoanBorrowers');
+const LoanBorrowerDetail = loanPage('LoanBorrowerDetail');
 // Support Desk workspace
 const CommandCenter = lazy(() => import('./pages/support/CommandCenter'));
 const SupportSettings = lazy(() => import('./pages/support/SupportSettings'));
@@ -225,6 +229,10 @@ export default function App() {
                 <Route path="drill/:metric" element={<LoanDrill />} />
                 <Route path="payments" element={<LoanPayments />} />
                 <Route path="collections" element={<LoanCollections />} />
+                <Route path="settlements" element={<LoanSettlements />} />
+                <Route path="collateral" element={<LoanCollateral />} />
+                <Route path="borrowers" element={<LoanBorrowers />} />
+                <Route path="borrowers/:module/:bid" element={<LoanBorrowerDetail />} />
                 <Route path="new" element={<NewLoan />} />
                 <Route path="lenders" element={<LoanLenders />} />
                 <Route path=":id" element={<LoanDetail />} />

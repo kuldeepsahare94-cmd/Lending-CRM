@@ -2,7 +2,7 @@
  * Loan & Mortgage screens. Every amount arrives from the server in whole paise
  * and is only formatted here; no balance is ever calculated in the browser.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../api';
 import { useAuth } from '../../context/AuthContext';
@@ -68,6 +68,7 @@ export function LoanDashboard() {
           <Kpi label="Collected this month" value={inr0(d.collected_this_month_paise)} to={drillTo('collected_month')} />
           <Kpi label="Total disbursed" value={inr0(d.disbursed_paise)} to={drillTo('disbursed')} />
           <Kpi label="Unallocated credit" value={inr0(d.unallocated_credit_paise)} to={drillTo('unallocated')} hint="Received but not yet applied" />
+          {d.lender_payable_paise !== undefined && <Kpi label="Payable to lenders" value={inr0(d.lender_payable_paise)} to={drillTo('lender_payable')} hint="Collected for lenders, not yet remitted" />}
         </div>
         {d.collections && (
           <div className="card p-4 flex items-center gap-3 flex-wrap">
@@ -114,11 +115,12 @@ export function LoanDrill() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
   const bucket = sp.get('bucket') || '', model = sp.get('model') || '';
-  const [d, setD] = useState(null), [err, setErr] = useState(''), [attempt, setAttempt] = useState(0);
+  const [d, setD] = useState(null), [err, setErr] = useState(''), [attempt, setAttempt] = useState(0), [offset, setOffset] = useState(0);
+  useEffect(() => { setOffset(0); }, [metric, bucket, model]);
   useEffect(() => {
     setD(null); setErr('');
-    api.loanDrill(metric, { bucket, model }).then(setD).catch((e) => setErr(e.message));
-  }, [metric, bucket, model, attempt]);
+    api.loanDrill(metric, { bucket, model, limit: PAGE_SIZE, offset }).then(setD).catch((e) => setErr(e.message));
+  }, [metric, bucket, model, attempt, offset]);
   const open = (id) => nav(`/loans/${id}`);
   return (
     <div className="space-y-3">
@@ -127,8 +129,8 @@ export function LoanDrill() {
         <h1 className="text-lg font-bold mt-1" style={ink}>{d ? d.title : 'Loading…'}</h1>
         {d && (<>
           <p className="text-sm mt-1" style={muted}>{d.why}</p>
-          <p className="text-sm mt-2" style={ink}><b>{d.count}</b> {d.kind === 'installments' ? 'installment' : d.kind === 'receipts' ? 'payment' : 'loan'}{d.count === 1 ? '' : 's'}
-            {d.kind !== 'loans' && <> across <b>{d.loans_count}</b> loan{d.loans_count === 1 ? '' : 's'}</>} · total <b>{inr(d.amount_paise)}</b>
+          <p className="text-sm mt-2" style={ink}><b>{d.count}</b> {d.kind === 'installments' ? 'installment' : d.kind === 'receipts' ? 'payment' : d.kind === 'lenders' ? 'lender' : 'loan'}{d.count === 1 ? '' : 's'}
+            {(d.kind === 'installments' || d.kind === 'receipts') && <> across <b>{d.loans_count}</b> loan{d.loans_count === 1 ? '' : 's'}</>} · total <b>{inr(d.amount_paise)}</b>
             <span className="text-xs" style={muted}> · the same figure as the dashboard card, as of {fdate(d.as_of)}</span></p>
         </>)}
         {metric === 'overdue' && <div className="flex gap-2 flex-wrap mt-3">{BUCKETS.map(([k, l]) => (
@@ -148,6 +150,11 @@ export function LoanDrill() {
             <td className="text-right" style={x.days_overdue ? { color: 'var(--color-danger)' } : undefined}>{x.days_overdue || '—'}</td><td className="text-right">{inr(x.amount_paise)}</td></tr>)}</tbody></table></div>
       )}
       {d && d.rows.length > 0 && d.kind === 'receipts' && <ReceiptRows rows={d.rows} onOpen={open} />}
+      {d && d.count > PAGE_SIZE && <div className="card"><Pager total={d.count} offset={offset} onPage={setOffset} /></div>}
+      {d && d.rows.length > 0 && d.kind === 'lenders' && (
+        <div className="card overflow-x-auto"><table className="sd-table w-full"><thead><tr><th>Lender</th><th className="text-right">Unsettled, after fee</th><th className="text-right">In open batches</th><th className="text-right">Payable</th></tr></thead>
+          <tbody>{d.rows.map((r) => <tr key={r.lender_id} className="cursor-pointer" onClick={() => nav('/loans/settlements')}><td className="font-medium">{r.lender_name}</td><td className="text-right">{inr(r.unsettled_net_paise)}</td><td className="text-right">{inr(r.open_batches_net_paise)}</td><td className="text-right">{inr(r.payable_paise)}</td></tr>)}</tbody></table></div>
+      )}
     </div>
   );
 }
@@ -162,11 +169,26 @@ function ReceiptRows({ rows, onOpen }) {
 
 export function LoanPayments() {
   const nav = useNavigate();
-  const [rows, setRows] = useState(null), [err, setErr] = useState('');
-  useEffect(() => { api.loanReceipts({}).then(setRows).catch((e) => setErr(e.message)); }, []);
+  const [data, setData] = useState(null), [err, setErr] = useState(''), [offset, setOffset] = useState(0);
+  useEffect(() => { setData(null); api.loanReceipts({ limit: PAGE_SIZE, offset }).then(setData).catch((e) => setErr(e.message)); }, [offset]);
   return (
     <div className="space-y-3"><h1 className="text-xl font-bold" style={ink}>Payments received</h1><Err text={err} />
-      {!rows ? <Loading /> : rows.length === 0 ? <div className="card p-8 text-center text-sm" style={muted}>No payments recorded yet.</div> : <ReceiptRows rows={rows} onOpen={(id) => nav(`/loans/${id}`)} />}</div>
+      {!data ? <Loading /> : data.rows.length === 0 ? <div className="card p-8 text-center text-sm" style={muted}>No payments recorded yet.</div> : (
+        <div><ReceiptRows rows={data.rows} onOpen={(id) => nav(`/loans/${id}`)} /><div className="card"><Pager total={data.total} offset={offset} onPage={setOffset} /></div></div>)}</div>
+  );
+}
+
+/* ----------------------------------------------------------------- Paging */
+const PAGE_SIZE = 50;
+function Pager({ total, offset, limit = PAGE_SIZE, onPage }) {
+  if (total <= limit) return null;
+  const to = Math.min(offset + limit, total);
+  return (
+    <div className="flex items-center justify-between p-3 text-xs" style={muted}>
+      <span>Showing {total ? offset + 1 : 0} to {to} of {total}</span>
+      <span className="flex gap-2"><button className="btn btn-secondary" disabled={offset === 0} onClick={() => onPage(Math.max(0, offset - limit))}>Previous</button>
+        <button className="btn btn-secondary" disabled={to >= total} onClick={() => onPage(offset + limit)}>Next</button></span>
+    </div>
   );
 }
 
@@ -175,8 +197,13 @@ export function LoanList() {
   const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
   const status = sp.get('status') || '', filter = sp.get('filter') || '', q = sp.get('q') || '';
-  const [rows, setRows] = useState(null), [err, setErr] = useState('');
-  useEffect(() => { setRows(null); api.loanList({ status, filter, q }).then(setRows).catch((e) => setErr(e.message)); }, [status, filter, q]);
+  const [data, setData] = useState(null), [err, setErr] = useState(''), [offset, setOffset] = useState(0);
+  useEffect(() => { setOffset(0); }, [status, filter, q]);
+  useEffect(() => {
+    setData(null);
+    const t = setTimeout(() => api.loanList({ status, filter, q, limit: PAGE_SIZE, offset }).then((r) => { setData(r); setErr(''); }).catch((e) => setErr(e.message)), q ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [status, filter, q, offset]);
   const set = (k, v) => { const n = new URLSearchParams(sp); v ? n.set(k, v) : n.delete(k); setSp(n, { replace: true }); };
   const chip = (label, on, fn) => <button key={label} onClick={fn} className={`btn ${on ? 'btn-primary' : 'btn-secondary'}`}>{label}</button>;
   return (
@@ -191,13 +218,13 @@ export function LoanList() {
         <input className="input max-w-xs" placeholder="Search loan number or borrower" value={q} onChange={(e) => set('q', e.target.value)} />
       </div>
       <Err text={err} />
-      {!rows ? <Loading /> : rows.length === 0 ? (
+      {!data ? <Loading /> : data.rows.length === 0 ? (
         <div className="card p-8 text-center text-sm" style={muted}>No loans match. Clear the filters or create a new loan.</div>
       ) : (
         <div className="card overflow-x-auto">
           <table className="sd-table w-full">
             <thead><tr><th>Loan</th><th>Borrower</th><th>Model</th><th className="text-right">Outstanding</th><th className="text-right">Overdue</th><th>Status</th></tr></thead>
-            <tbody>{rows.map((l) => (
+            <tbody>{data.rows.map((l) => (
               <tr key={l.id} className="cursor-pointer" onClick={() => nav(`/loans/${l.id}`)}>
                 <td className="font-medium">{l.loan_number}</td><td>{l.borrower_name || '—'}</td><td>{MODEL[l.business_model]}</td>
                 <td className="text-right">{inr(l.principal_outstanding_paise)}</td>
@@ -205,6 +232,7 @@ export function LoanList() {
                 <td><Pill s={l.overdue_paise && l.status === 'Active' ? 'Overdue' : l.status} /></td>
               </tr>))}</tbody>
           </table>
+          <Pager total={data.total} offset={offset} onPage={setOffset} />
         </div>
       )}
     </div>
@@ -214,8 +242,9 @@ export function LoanList() {
 /* ----------------------------------------------------------------- New loan */
 export function NewLoan() {
   const nav = useNavigate();
+  const [qp] = useSearchParams();
   const [lenders, setLenders] = useState([]);
-  const [f, setF] = useState({ borrower: null, business_model: 'direct', lender_id: '', amount: '', rate_percent: '', tenure: '12', frequency: 'monthly',
+  const [f, setF] = useState({ borrower: qp.get('borrower_id') ? { module: qp.get('borrower_module'), record_id: Number(qp.get('borrower_id')), name: qp.get('borrower_name') || 'Selected borrower' } : null, business_model: 'direct', lender_id: '', amount: '', rate_percent: '', tenure: '12', frequency: 'monthly',
     interest_method: 'reducing', repayment_type: 'emi', start_date: todayStr(), disbursement_date: todayStr() });
   const [prev, setPrev] = useState(null), [perr, setPerr] = useState(''), [err, setErr] = useState(''), [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e && e.target ? e.target.value : e }));
@@ -297,7 +326,7 @@ export function LoanDetail() {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div><div className="flex items-center gap-2"><h1 className="text-xl font-bold" style={ink}>{loan.loan_number}</h1><Pill s={overdue ? 'Overdue' : loan.status} /></div>
             <p className="text-sm mt-1" style={muted}>{MODEL[loan.business_model]} · {(loan.rate_e4 / 10000).toString()}% {loan.interest_method} · {loan.tenure} {loan.frequency} installments · starts {fdate(loan.start_date)}</p></div>
-          <Link to={`/records/${loan.borrower_module}/${loan.borrower_id}`} className="btn btn-secondary">Open borrower</Link>
+          <Link to={`/loans/borrowers/${loan.borrower_module}/${loan.borrower_id}`} className="btn btn-secondary">Open borrower</Link>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
           <Kpi label="Principal outstanding" value={inr(summary.principal_outstanding_paise)} />
@@ -306,7 +335,7 @@ export function LoanDetail() {
           <Kpi label="Unallocated credit" value={inr(summary.unallocated_credit_paise)} />
         </div>
       </div>
-      <div className="flex gap-2">{[['schedule', 'Schedule'], ['receipts', 'Receipts'], ['ledger', 'Ledger'], ['followups', 'Follow-ups']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`btn ${tab === k ? 'btn-primary' : 'btn-secondary'}`}>{l}</button>)}</div>
+      <div className="flex gap-2">{[['schedule', 'Schedule'], ['receipts', 'Receipts'], ['ledger', 'Ledger'], ['followups', 'Follow-ups'], ['collateral', 'Collateral']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`btn ${tab === k ? 'btn-primary' : 'btn-secondary'}`}>{l}</button>)}</div>
       <Err text={err} />
       {tab === 'schedule' && (
         <div className="card overflow-x-auto"><table className="sd-table w-full"><thead><tr><th>#</th><th>Due</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th className="text-right">Total</th><th className="text-right">Paid</th><th>Status</th></tr></thead>
@@ -314,6 +343,7 @@ export function LoanDetail() {
             <td className="text-right">{inr(x.principal_paise + x.interest_paise + x.fees_paise)}</td><td className="text-right">{inr(x.paid_principal_paise + x.paid_interest_paise + x.paid_fees_paise)}</td><td><Pill s={x.status} /></td></tr>)}</tbody></table></div>
       )}
       {tab === 'receipts' && <Receipts loan={loan} receipts={receipts} canPost={can(user, 'loans', 'create') && ['Active', 'Delinquent'].includes(loan.status)} canReverse={can(user, 'loans', 'edit')} onChange={load} />}
+      {tab === 'collateral' && <CollateralManager loanId={loan.id} canEdit={can(user, 'loans', 'edit')} canCreate={can(user, 'loans', 'create')} />}
       {tab === 'followups' && <FollowUps loan={loan} canAdd={can(user, 'loan_collections', 'create') && ['Active', 'Delinquent'].includes(loan.status)} />}
       {tab === 'ledger' && (!ledger ? <Loading /> : (
         <div className="card overflow-x-auto"><table className="sd-table w-full"><thead><tr><th>Date</th><th>Entry</th><th>Component</th><th className="text-right">Amount</th><th>Note</th></tr></thead>
@@ -490,6 +520,298 @@ function FollowUps({ loan, canAdd }) {
             {rows.map((a) => <tr key={a.id}><td>{fdate(a.created_at)}</td><td className="capitalize">{a.action_type}</td><td>{a.installment_seq ? `#${a.installment_seq}` : '—'}</td>
               <td>{a.outcome || '—'}{a.promised_date ? ` · ${fdate(a.promised_date)}` : ''}</td><td>{a.note || ''}</td><td>{a.by_name || '—'}</td></tr>)}</tbody></table></div>
       )}
+    </div>
+  );
+}
+
+
+/* -------------------------------------------------------------- Settlements */
+const BATCH_TONE = { Pending: 'Upcoming', Remitted: 'Partial', Reconciled: 'Paid', Disputed: 'Overdue' };
+
+export function LoanSettlements() {
+  const { user } = useAuth();
+  const [sum, setSum] = useState(null), [batches, setBatches] = useState(null), [comm, setComm] = useState(null), [err, setErr] = useState('');
+  const [open, setOpen] = useState(null), [detail, setDetail] = useState(null);
+  const [ded, setDed] = useState({}), [refs, setRefs] = useState({}), [why, setWhy] = useState({});
+  const load = useCallback(async () => {
+    try { const [a, b, c] = await Promise.all([api.loanSettlementSummary(), api.loanBatches({}), api.loanCommissions()]); setSum(a); setBatches(b); setComm(c); setErr(''); }
+    catch (e) { setErr(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (open) api.loanBatch(open).then(setDetail).catch((e) => setErr(e.message)); else setDetail(null); }, [open, batches]);
+  const run = async (fn) => { setErr(''); try { await fn(); await load(); } catch (e) { setErr(e.message); } };
+  const canCreate = can(user, 'loan_settlements', 'create'), canEdit = can(user, 'loan_settlements', 'edit');
+  if (!sum && !err) return <Loading />;
+  return (
+    <div className="space-y-4">
+      <div><h1 className="text-xl font-bold" style={ink}>Lender settlements</h1>
+        <p className="text-xs" style={muted}>Money collected on a lender's behalf is batched here, less the servicing fee ({sum ? sum.servicing_fee_percent : '…'}%) and any approved deduction, then remitted and reconciled.</p></div>
+      <Err text={err} />
+      {sum && (<>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <Kpi label="Payable to lenders" value={inr0(sum.totals.payable_paise)} to="/loans/drill/lender_payable" />
+          <Kpi label="Remitted so far" value={inr0(sum.totals.remitted_paise)} />
+          <Kpi label="Awaiting reconciliation" value={sum.lenders.reduce((n, l) => n + l.awaiting_reconciliation, 0)} />
+          <Kpi label="Exceptions" value={sum.totals.exceptions} tone={sum.totals.exceptions ? 'var(--color-danger)' : undefined} hint="Payments reversed after settlement" />
+        </div>
+        {sum.lenders.length === 0 && <div className="card p-8 text-center text-sm" style={muted}>No loans are collected on behalf of a lender yet.</div>}
+        {sum.lenders.map((l) => (
+          <div key={l.lender_id} className="card p-4 space-y-3">
+            <div className="flex items-baseline justify-between gap-2 flex-wrap"><div className="font-semibold" style={ink}>{l.lender_name}</div>
+              <div className="text-sm" style={muted}>Payable <b style={ink}>{inr(l.payable_paise)}</b></div></div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <div><div className="text-xs" style={muted}>Unsettled collections ({l.unsettled_items})</div><b>{inr(l.unsettled_gross_paise)}</b></div>
+              <div><div className="text-xs" style={muted}>Servicing fee</div><b>{inr(l.unsettled_fee_paise)}</b></div>
+              <div><div className="text-xs" style={muted}>Available to settle</div><b>{inr(l.unsettled_net_paise)}</b></div>
+              <div><div className="text-xs" style={muted}>In open batches</div><b>{inr(l.open_batches_net_paise)}</b></div>
+            </div>
+            {l.exceptions > 0 && <p className="text-sm" style={{ color: 'var(--color-danger)' }}>{l.exceptions} payment{l.exceptions === 1 ? ' was' : 's were'} reversed after settlement. {l.exceptions === 1 ? 'It' : 'They'} will be taken back automatically in the next batch.</p>}
+            {canCreate && (
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr_auto] gap-2 items-end">
+                <Field label="Approved deduction (₹, optional)"><input className="input" inputMode="decimal" value={ded[l.lender_id]?.amount || ''} onChange={(e) => setDed({ ...ded, [l.lender_id]: { ...ded[l.lender_id], amount: e.target.value } })} /></Field>
+                <Field label="Reason for deduction"><input className="input" value={ded[l.lender_id]?.reason || ''} onChange={(e) => setDed({ ...ded, [l.lender_id]: { ...ded[l.lender_id], reason: e.target.value } })} /></Field>
+                <button className="btn btn-primary" disabled={!l.unsettled_items} onClick={() => run(async () => { await api.loanCreateBatch(l.lender_id, { deduction: ded[l.lender_id]?.amount || undefined, deduction_reason: ded[l.lender_id]?.reason }); setDed({ ...ded, [l.lender_id]: {} }); })}>Create batch</button>
+              </div>)}
+          </div>))}
+        <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Batches</div>
+          <table className="sd-table w-full"><thead><tr><th>Batch</th><th>Lender</th><th>Period</th><th className="text-right">Gross</th><th className="text-right">Fee</th><th className="text-right">Deduction</th><th className="text-right">Net</th><th>Status</th><th /></tr></thead>
+            <tbody>{!batches ? <tr><td colSpan={9}>Loading…</td></tr> : batches.length === 0 ? <tr><td colSpan={9} className="text-center py-6" style={muted}>No batches yet.</td></tr> : batches.map((b) => (
+              <Fragment key={b.id}>
+                <tr><td><button className="underline" onClick={() => setOpen(open === b.id ? null : b.id)}>{b.batch_number}</button></td><td>{b.lender_name}</td><td className="text-xs">{fdate(b.period_from)} to {fdate(b.period_to)}</td>
+                  <td className="text-right">{inr(b.gross_paise)}</td><td className="text-right">{inr(b.fee_paise)}</td><td className="text-right">{b.deduction_paise ? inr(b.deduction_paise) : '—'}</td><td className="text-right font-medium">{inr(b.net_paise)}</td>
+                  <td><Pill s={BATCH_TONE[b.status]} />{' '}<span className="text-xs" style={muted}>{b.status}</span>{b.remit_reference && <div className="text-[11px]" style={muted}>{b.remit_reference}</div>}{b.dispute_reason && <div className="text-[11px]" style={muted}>{b.dispute_reason}</div>}</td>
+                  <td className="whitespace-nowrap">{canEdit && <>
+                    {b.status === 'Pending' && <><input className="input !w-32 !inline-block" placeholder="Bank reference" value={refs[b.id] || ''} onChange={(e) => setRefs({ ...refs, [b.id]: e.target.value })} /> <button className="btn btn-ghost" disabled={!(refs[b.id] || '').trim()} onClick={() => run(() => api.loanRemit(b.id, { reference: refs[b.id] }))}>Remit</button></>}
+                    {b.status === 'Remitted' && <button className="btn btn-ghost" onClick={() => run(() => api.loanReconcile(b.id))}>Reconcile</button>}
+                    {['Pending', 'Remitted'].includes(b.status) && <><input className="input !w-32 !inline-block" placeholder="Dispute reason" value={why[b.id] || ''} onChange={(e) => setWhy({ ...why, [b.id]: e.target.value })} /> <button className="btn btn-ghost" disabled={!(why[b.id] || '').trim()} onClick={() => run(() => api.loanDispute(b.id, why[b.id]))}>Dispute</button></>}
+                    {b.status === 'Disputed' && <button className="btn btn-ghost" onClick={() => run(() => api.loanReopen(b.id))}>Reopen</button>}</>}</td></tr>
+                {open === b.id && detail && detail.id === b.id && (
+                  <tr><td colSpan={9} className="bg-slate-50"><table className="sd-table w-full"><thead><tr><th>Receipt</th><th>Loan</th><th>Paid on</th><th>Type</th><th className="text-right">Amount</th><th className="text-right">Fee</th></tr></thead>
+                    <tbody>{detail.items.map((i) => <tr key={i.id}><td>{i.receipt_number}</td><td><Link className="underline" to={`/loans/${i.loan_id}`}>{i.loan_number}</Link></td><td>{fdate(i.payment_date)}</td><td>{i.kind === 'reversal' ? 'Clawback (payment reversed)' : 'Collected'}</td><td className="text-right">{inr(i.gross_paise)}</td><td className="text-right">{inr(i.fee_paise)}</td></tr>)}</tbody></table>
+                    {detail.deduction_paise > 0 && <p className="text-xs p-2" style={muted}>Deduction of {inr(detail.deduction_paise)}: {detail.deduction_reason}</p>}</td></tr>)}
+              </Fragment>))}</tbody></table></div>
+        {comm && (
+          <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Our commission and fees <span className="font-normal text-xs" style={muted}>(worked out from the loans, not typed in)</span></div>
+            <div className="px-4 pb-2 text-sm" style={muted}>Servicing fees taken in batches: <b style={ink}>{inr(comm.servicing_fees_paise)}</b> · Arrangement commission ({comm.arrangement_commission_percent}% of the amount disbursed): <b style={ink}>{inr(comm.arrangement_total_paise)}</b></div>
+            <table className="sd-table w-full"><thead><tr><th>Loan</th><th>Borrower</th><th>Lender</th><th className="text-right">Disbursed</th><th className="text-right">Commission</th></tr></thead>
+              <tbody>{comm.arrangement.length === 0 && <tr><td colSpan={5} className="text-center py-4" style={muted}>No arranged loans yet.</td></tr>}
+                {comm.arrangement.map((c) => <tr key={c.id}><td><Link className="underline" to={`/loans/${c.id}`}>{c.loan_number}</Link></td><td>{c.borrower_name || '—'}</td><td>{c.lender_name || '—'}</td><td className="text-right">{inr(c.disbursed_paise)}</td><td className="text-right">{inr(c.commission_paise)}</td></tr>)}</tbody></table></div>
+        )}
+      </>)}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------- Collateral */
+const COLLATERAL_TYPES = ['Residential property', 'Commercial property', 'Land', 'Vehicle', 'Machinery', 'Gold / jewellery', 'Securities', 'Other'];
+const LIEN = ['Clear', 'Mortgage registered', 'Encumbered'];
+const pct = (bp) => (bp === null || bp === undefined ? 'No security' : `${(bp / 100).toFixed(bp % 100 === 0 ? 0 : 1)}%`);
+
+function DocsPanel({ collateralId, canAdd }) {
+  const [docs, setDocs] = useState(null), [err, setErr] = useState(''), [busy, setBusy] = useState(false);
+  const load = useCallback(() => api.listDocuments({ related_module: 'loan_collateral', related_record_id: collateralId }).then(setDocs).catch((e) => setErr(e.message)), [collateralId]);
+  useEffect(() => { load(); }, [load]);
+  const upload = async (e) => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    setBusy(true); setErr('');
+    try { const fd = new FormData(); fd.append('file', file); fd.append('title', file.name); fd.append('related_module', 'loan_collateral'); fd.append('related_record_id', String(collateralId)); await api.uploadDocument(fd); await load(); }
+    catch (x) { setErr(x.message); } finally { setBusy(false); e.target.value = ''; }
+  };
+  return (
+    <div className="space-y-2"><div className="text-sm font-semibold" style={ink}>Documents <span className="font-normal text-xs" style={muted}>(kept in the Documents module)</span></div>
+      {!docs ? <span className="text-sm" style={muted}>Loading…</span> : docs.length === 0 ? <div className="text-sm" style={muted}>No documents attached.</div> : (
+        <ul className="text-sm space-y-1">{docs.map((d) => <li key={d.id}><button className="underline" onClick={() => api.downloadDocument(d.id, d.file_name)}>{d.title}</button> <span className="text-xs" style={muted}>{fdate(d.created_at)}</span></li>)}</ul>)}
+      {canAdd && <label className="btn btn-secondary cursor-pointer inline-block">{busy ? 'Uploading…' : 'Attach a file'}<input type="file" className="hidden" disabled={busy} onChange={upload} /></label>}
+      <Err text={err} /></div>
+  );
+}
+
+export function CollateralManager({ loanId, canEdit, canCreate, showLoanPicker }) {
+  const [data, setData] = useState(null), [loans, setLoans] = useState([]), [err, setErr] = useState(''), [panel, setPanel] = useState(null), [onlyHigh, setOnlyHigh] = useState(false);
+  const blank = { loan_id: loanId || '', collateral_type: COLLATERAL_TYPES[1], description: '', legal_owner: '', mortgage_holder: '', value: '', valuation_date: todayStr(), lien_status: 'Clear' };
+  const [f, setF] = useState(blank), [adding, setAdding] = useState(false), [edit, setEdit] = useState({ value: '', valuation_date: todayStr(), lien_status: 'Clear', reason: '' }), [why, setWhy] = useState('');
+  const load = useCallback(() => api.loanCollateral({ loan_id: loanId, high_ltv: onlyHigh ? 1 : undefined }).then((r) => { setData(r); setErr(''); }).catch((e) => setErr(e.message)), [loanId, onlyHigh]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (showLoanPicker) api.loanList({}).then(setLoans).catch(() => {}); }, [showLoanPicker]);
+  const act = async (fn) => { setErr(''); try { await fn(); setPanel(null); setAdding(false); setWhy(''); await load(); } catch (e) { setErr(e.message); } };
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  if (!data && !err) return <Loading />;
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2 items-center flex-wrap">
+        {showLoanPicker && <button className={`btn ${onlyHigh ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setOnlyHigh(!onlyHigh)}>High loan-to-value only{data ? ` (above ${data.ltv_alert_percent}%)` : ''}</button>}
+        {canCreate && <button className="btn btn-primary ml-auto" onClick={() => setAdding(!adding)}>{adding ? 'Close' : 'Add collateral'}</button>}
+      </div>
+      <Err text={err} />
+      {adding && (
+        <div className="card p-4 space-y-3"><div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {showLoanPicker && <Field label="Loan"><select className="input" value={f.loan_id} onChange={set('loan_id')}><option value="">Select loan</option>{loans.map((l) => <option key={l.id} value={l.id}>{l.loan_number} · {l.borrower_name}</option>)}</select></Field>}
+          <Field label="Type"><select className="input" value={f.collateral_type} onChange={set('collateral_type')}>{COLLATERAL_TYPES.map((t) => <option key={t}>{t}</option>)}</select></Field>
+          <Field label="Description"><input className="input" value={f.description} onChange={set('description')} /></Field>
+          <Field label="Legal owner"><input className="input" value={f.legal_owner} onChange={set('legal_owner')} /></Field>
+          <Field label="Mortgage holder"><input className="input" value={f.mortgage_holder} onChange={set('mortgage_holder')} /></Field>
+          <Field label="Estimated value (₹)"><input className="input" inputMode="decimal" value={f.value} onChange={set('value')} /></Field>
+          <DateField label="Valued on" value={f.valuation_date} onChange={(v) => setF({ ...f, valuation_date: v })} />
+          <Field label="Lien status"><select className="input" value={f.lien_status} onChange={set('lien_status')}>{LIEN.map((t) => <option key={t}>{t}</option>)}</select></Field>
+        </div><button className="btn btn-primary" disabled={!f.loan_id || !f.description.trim() || !f.value} onClick={() => act(() => api.loanCollateralCreate(f.loan_id, f))}>Save collateral</button></div>)}
+      {data && data.rows.length === 0 ? <div className="card p-8 text-center text-sm" style={muted}>No collateral recorded{onlyHigh ? ' with high loan-to-value' : ''}.</div> : data && (
+        <div className="card overflow-x-auto"><table className="sd-table w-full">
+          <thead><tr>{showLoanPicker && <th>Loan</th>}<th>Type</th><th>Description</th><th>Legal owner</th><th>Mortgage holder</th><th className="text-right">Value</th><th>Lien</th><th className="text-right">Loan-to-value</th><th>Status</th><th /></tr></thead>
+          <tbody>{data.rows.map((c) => (
+            <Fragment key={c.id}>
+              <tr>{showLoanPicker && <td><Link className="underline" to={`/loans/${c.loan_id}`}>{c.loan_number}</Link><div className="text-[11px]" style={muted}>{c.borrower_name}</div></td>}
+                <td>{c.collateral_type}</td><td>{c.description}</td><td>{c.legal_owner || '—'}</td><td>{c.mortgage_holder || '—'}</td>
+                <td className="text-right">{inr(c.value_paise)}<div className="text-[11px]" style={muted}>{fdate(c.valuation_date)}</div></td><td>{c.lien_status}</td>
+                <td className="text-right" style={c.high_ltv ? { color: 'var(--color-danger)', fontWeight: 600 } : undefined}>{c.status === 'Held' ? pct(c.loan_ltv_bp) : '—'}</td>
+                <td><Pill s={c.status === 'Held' ? 'Active' : 'Reversed'} /> <span className="text-xs" style={muted}>{c.status}</span></td>
+                <td className="whitespace-nowrap"><button className="btn btn-ghost" onClick={() => setPanel(panel && panel.id === c.id && panel.kind === 'docs' ? null : { id: c.id, kind: 'docs' })}>Documents</button>
+                  {canEdit && c.status === 'Held' && <><button className="btn btn-ghost" onClick={() => { setEdit({ value: '', valuation_date: todayStr(), lien_status: c.lien_status, reason: '' }); setPanel({ id: c.id, kind: 'edit' }); }}>Update</button>
+                    <button className="btn btn-ghost" onClick={() => setPanel({ id: c.id, kind: 'release' })}>Release</button></>}</td></tr>
+              {panel && panel.id === c.id && (
+                <tr><td colSpan={showLoanPicker ? 10 : 9} className="bg-slate-50 p-3">
+                  {panel.kind === 'docs' && <DocsPanel collateralId={c.id} canAdd={canCreate} />}
+                  {panel.kind === 'edit' && (<div className="space-y-2"><div className="text-sm font-semibold" style={ink}>Update value or lien status</div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <Field label="New value (₹, empty = unchanged)"><input className="input" inputMode="decimal" value={edit.value} onChange={(e) => setEdit({ ...edit, value: e.target.value })} /></Field>
+                      <DateField label="Valued on" value={edit.valuation_date} onChange={(v) => setEdit({ ...edit, valuation_date: v })} />
+                      <Field label="Lien status"><select className="input" value={edit.lien_status} onChange={(e) => setEdit({ ...edit, lien_status: e.target.value })}>{LIEN.map((t) => <option key={t}>{t}</option>)}</select></Field>
+                      <Field label="Reason (required)"><input className="input" value={edit.reason} onChange={(e) => setEdit({ ...edit, reason: e.target.value })} /></Field></div>
+                    <div className="flex gap-2"><button className="btn btn-primary" disabled={!edit.reason.trim()} onClick={() => act(() => api.loanCollateralUpdate(c.id, { ...(edit.value ? { value: edit.value, valuation_date: edit.valuation_date } : {}), lien_status: edit.lien_status, reason: edit.reason }))}>Save</button><button className="btn btn-secondary" onClick={() => setPanel(null)}>Cancel</button></div></div>)}
+                  {panel.kind === 'release' && (<div className="space-y-2"><div className="text-sm font-semibold" style={ink}>Release this collateral</div><p className="text-xs" style={muted}>It stops counting toward loan-to-value. This cannot be undone.</p>
+                    <input className="input" placeholder="Reason (required)" value={why} onChange={(e) => setWhy(e.target.value)} />
+                    <div className="flex gap-2"><button className="btn btn-danger" disabled={!why.trim()} onClick={() => act(() => api.loanCollateralRelease(c.id, why))}>Release</button><button className="btn btn-secondary" onClick={() => setPanel(null)}>Cancel</button></div></div>)}
+                </td></tr>)}
+            </Fragment>))}</tbody></table>
+          <p className="text-[11px] p-3" style={muted}>Loan-to-value is the loan's principal outstanding divided by the value of all collateral still held against it. Over {data.ltv_alert_percent}% is flagged.</p></div>
+      )}
+    </div>
+  );
+}
+
+export function LoanCollateral() {
+  const { user } = useAuth();
+  return (<div className="space-y-3"><div><h1 className="text-xl font-bold" style={ink}>Collateral</h1><p className="text-xs" style={muted}>Security held against loans. Owner and mortgage holder are recorded separately.</p></div>
+    <CollateralManager showLoanPicker canEdit={can(user, 'loans', 'edit')} canCreate={can(user, 'loans', 'create')} /></div>);
+}
+
+
+/* ---------------------------------------------------------------- Borrowers */
+// A borrower is an existing Account (business) or Contact (individual).
+const PAGE = 25;
+
+export function LoanBorrowers() {
+  const { user } = useAuth();
+  const nav = useNavigate();
+  const [filter, setFilter] = useState('with_loans'), [q, setQ] = useState(''), [offset, setOffset] = useState(0);
+  const [d, setD] = useState(null), [err, setErr] = useState('');
+  const [adding, setAdding] = useState(false), [nf, setNf] = useState({ type: 'contacts', first_name: '', last_name: '', account_name: '', phone: '', email: '', city: '' }), [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setD(null);
+    const t = setTimeout(() => api.loanBorrowers({ filter, q, limit: PAGE, offset }).then((r) => { setD(r); setErr(''); }).catch((e) => setErr(e.message)), q ? 300 : 0);
+    return () => clearTimeout(t);
+  }, [filter, q, offset]);
+  const canAdd = can(user, 'loans', 'create');
+  const add = async () => {
+    setErr(''); setBusy(true);
+    try {
+      const metas = await api.listModulesMeta();
+      const mod = metas.find((m) => m.api_name === nf.type);
+      if (!mod) throw new Error('The ' + nf.type + ' module is not available.');
+      const body = nf.type === 'contacts'
+        ? { first_name: nf.first_name, last_name: nf.last_name, phone: nf.phone, email: nf.email, city: nf.city }
+        : { account_name: nf.account_name, phone: nf.phone, email: nf.email, city: nf.city };
+      const created = await api.universalCreate(mod, body);
+      nav(`/loans/borrowers/${nf.type}/${created.id || (created.record && created.record.id)}`);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const set = (k) => (e) => setNf({ ...nf, [k]: e.target.value });
+  const chip = (k, l) => <button key={k} className={`btn ${filter === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => { setFilter(k); setOffset(0); }}>{l}</button>;
+  const total = d ? d.total : 0, to = Math.min(offset + PAGE, total);
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div><h1 className="text-xl font-bold" style={ink}>Borrowers</h1><p className="text-xs" style={muted}>The customers loans are made to. They are your existing Accounts (businesses) and Contacts (individuals), so there is one customer list.</p></div>
+        {canAdd && <button className="btn btn-primary" onClick={() => setAdding(!adding)}>{adding ? 'Close' : 'Add borrower'}</button>}
+      </div>
+      {adding && (
+        <div className="card p-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <Field label="Borrower type"><select className="input" value={nf.type} onChange={set('type')}><option value="contacts">Individual</option><option value="accounts">Business</option></select></Field>
+            {nf.type === 'contacts' ? (<><Field label="First name"><input className="input" value={nf.first_name} onChange={set('first_name')} /></Field><Field label="Last name"><input className="input" value={nf.last_name} onChange={set('last_name')} /></Field></>)
+              : <Field label="Business name"><input className="input" value={nf.account_name} onChange={set('account_name')} /></Field>}
+            <Field label="Phone"><input className="input" value={nf.phone} onChange={set('phone')} /></Field>
+            <Field label="Email"><input className="input" value={nf.email} onChange={set('email')} /></Field>
+            <Field label="City"><input className="input" value={nf.city} onChange={set('city')} /></Field>
+          </div>
+          <p className="text-xs" style={muted}>This creates a normal Contact or Account, with the same checks as the Contacts and Accounts screens. Fill in more detail there later.</p>
+          <button className="btn btn-primary" disabled={busy || (nf.type === 'contacts' ? !nf.first_name.trim() : !nf.account_name.trim())} onClick={add}>{busy ? 'Saving…' : 'Save and open'}</button>
+        </div>)}
+      <div className="flex gap-2 flex-wrap items-center">
+        {chip('with_loans', 'With loans')}{chip('overdue', 'Overdue')}{chip('all', 'All customers')}
+        <input className="input max-w-xs" placeholder="Search name, phone, email or city" value={q} onChange={(e) => { setQ(e.target.value); setOffset(0); }} />
+      </div>
+      <Err text={err} />
+      {!d && !err ? <Loading /> : d && (d.rows.length === 0 ? (
+        <div className="card p-8 text-center text-sm" style={muted}>{filter === 'with_loans' ? 'No borrowers with loans match. Try All customers to find someone who has no loan yet.' : 'No borrowers match.'}</div>
+      ) : (
+        <div className="card overflow-x-auto"><table className="sd-table w-full">
+          <thead><tr><th>Borrower</th><th>Type</th><th>Phone</th><th>City</th><th className="text-right">Loans</th><th className="text-right">Outstanding</th><th className="text-right">Overdue</th><th className="text-right">Collateral held</th></tr></thead>
+          <tbody>{d.rows.map((r) => (
+            <tr key={`${r.module}-${r.id}`} className="cursor-pointer" onClick={() => nav(`/loans/borrowers/${r.module}/${r.id}`)}>
+              <td className="font-medium">{r.name || '—'}</td><td>{r.type_label}</td><td>{r.phone || '—'}</td><td>{r.city || '—'}</td>
+              <td className="text-right">{r.loans_count}</td><td className="text-right">{r.loans_count ? inr(r.outstanding_paise) : '—'}</td>
+              <td className="text-right" style={r.overdue_paise ? { color: 'var(--color-danger)' } : undefined}>{r.overdue_paise ? inr(r.overdue_paise) : '—'}</td>
+              <td className="text-right">{r.collateral_value_paise ? inr(r.collateral_value_paise) : '—'}</td></tr>))}</tbody></table>
+          <div className="flex items-center justify-between p-3 text-xs" style={muted}>
+            <span>Showing {total ? offset + 1 : 0} to {to} of {total}</span>
+            <span className="flex gap-2"><button className="btn btn-secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))}>Previous</button><button className="btn btn-secondary" disabled={to >= total} onClick={() => setOffset(offset + PAGE)}>Next</button></span></div></div>
+      ))}
+    </div>
+  );
+}
+
+export function LoanBorrowerDetail() {
+  const { module, bid } = useParams();
+  const nav = useNavigate();
+  const { user } = useAuth();
+  const [d, setD] = useState(null), [err, setErr] = useState('');
+  useEffect(() => { setD(null); api.loanBorrower(module, bid).then(setD).catch((e) => setErr(e.message)); }, [module, bid]);
+  if (err) return <div className="card p-6"><Err text={err} /><Link to="/loans/borrowers" className="underline text-sm">Back to borrowers</Link></div>;
+  if (!d) return <Loading />;
+  const { borrower: b, summary: s, loans, collateral, recent_receipts: rec } = d;
+  const ltv = d.held_collateral_paise > 0 ? (s.outstanding_paise / d.held_collateral_paise) * 100 : null;
+  return (
+    <div className="space-y-4">
+      <Link to="/loans/borrowers" className="text-xs underline" style={muted}>← All borrowers</Link>
+      <div className="card p-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div><h1 className="text-xl font-bold" style={ink}>{b.name}</h1>
+            <p className="text-sm mt-1" style={muted}>{b.type_label} · {b.phone || 'no phone'} · {b.email || 'no email'} · {b.city || 'no city'}</p></div>
+          <div className="flex gap-2 flex-wrap">
+            {can(user, 'loans', 'create') && <Link className="btn btn-primary" to={`/loans/new?borrower_module=${module}&borrower_id=${bid}&borrower_name=${encodeURIComponent(b.name || '')}`}>New loan</Link>}
+            <Link className="btn btn-secondary" to={d.record_path}>Open full customer record</Link></div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+          <Kpi label="Loans" value={`${s.loans_count}`} hint={`${s.active_loans} active`} />
+          <Kpi label="Principal outstanding" value={inr(s.outstanding_paise)} />
+          <Kpi label="Overdue" value={inr(s.overdue_paise)} tone={s.overdue_paise ? 'var(--color-danger)' : undefined} />
+          <Kpi label="Collateral held" value={inr(d.held_collateral_paise)} />
+          <Kpi label="Loan-to-value" value={ltv === null ? 'No security' : `${ltv.toFixed(0)}%`} tone={ltv !== null && ltv > 80 ? 'var(--color-danger)' : undefined} />
+        </div>
+      </div>
+      <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Loans</div>
+        <table className="sd-table w-full"><thead><tr><th>Loan</th><th>Model</th><th>Rate</th><th className="text-right">Disbursed</th><th className="text-right">Outstanding</th><th className="text-right">Overdue</th><th>Status</th></tr></thead>
+          <tbody>{loans.length === 0 && <tr><td colSpan={7} className="text-center py-6" style={muted}>No loans yet. Use New loan to make the first one.</td></tr>}
+            {loans.map((l) => <tr key={l.id} className="cursor-pointer" onClick={() => nav(`/loans/${l.id}`)}><td className="font-medium">{l.loan_number}</td><td>{MODEL[l.business_model]}</td><td>{l.rate_e4 / 10000}%</td>
+              <td className="text-right">{inr(l.disbursed_paise)}</td><td className="text-right">{inr(l.principal_outstanding_paise)}</td><td className="text-right" style={l.overdue_paise ? { color: 'var(--color-danger)' } : undefined}>{l.overdue_paise ? inr(l.overdue_paise) : '—'}</td><td><Pill s={l.overdue_paise && l.status === 'Active' ? 'Overdue' : l.status} /></td></tr>)}</tbody></table></div>
+      {collateral.length > 0 && (
+        <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Collateral</div>
+          <table className="sd-table w-full"><thead><tr><th>Loan</th><th>Type</th><th>Description</th><th>Legal owner</th><th>Mortgage holder</th><th className="text-right">Value</th><th>Status</th></tr></thead>
+            <tbody>{collateral.map((c) => <tr key={c.id}><td>{c.loan_number}</td><td>{c.collateral_type}</td><td>{c.description}</td><td>{c.legal_owner || '—'}</td><td>{c.mortgage_holder || '—'}</td><td className="text-right">{inr(c.value_paise)}</td><td>{c.status}</td></tr>)}</tbody></table></div>)}
+      {rec.length > 0 && (
+        <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Recent payments</div>
+          <table className="sd-table w-full"><thead><tr><th>Receipt</th><th>Loan</th><th>Date</th><th>Method</th><th className="text-right">Amount</th><th>Status</th></tr></thead>
+            <tbody>{rec.map((r) => <tr key={r.id}><td>{r.receipt_number}</td><td>{r.loan_number}</td><td>{fdate(r.payment_date)}</td><td>{r.method || '—'}</td><td className="text-right">{inr(r.amount_paise)}</td><td><Pill s={r.status} /></td></tr>)}</tbody></table></div>)}
     </div>
   );
 }

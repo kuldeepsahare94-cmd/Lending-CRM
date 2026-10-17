@@ -15,7 +15,7 @@ import { PageHeader } from '../components/ui';
 // could display or edit them, so a role that genuinely needed adjusting here
 // had no way to. (Modules made in Settings → Modules are added to the end of
 // the list by themselves.)
-const MODULES = ['leads', 'accounts', 'contacts', 'loans', 'loan_lenders', 'loan_collections',
+const MODULES = ['leads', 'accounts', 'contacts', 'loans', 'loan_lenders', 'loan_collections', 'loan_settlements',
   'invoices', 'document_templates', 'tickets', 'calls', 'meetings',
   'tasks', 'notes', 'emails', 'documents', 'teams', 'workflows', 'reports', 'users',
   'chat', 'calendar', 'settings', 'support', 'support_settings', 'kb_articles', 'major_incidents', 'problems',

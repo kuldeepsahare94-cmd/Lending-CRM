@@ -3,13 +3,16 @@
  * on the Support Desk shell so the two feel like one product.
  */
 import { NavLink, Outlet } from 'react-router-dom';
-import { Gauge, Landmark, FilePlus2, Building2, Wallet, PhoneCall } from 'lucide-react';
+import { Gauge, Landmark, FilePlus2, Building2, Wallet, PhoneCall, ShieldCheck, Banknote, Users } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const NAV = [
   { to: '/loans', label: 'Dashboard', icon: Gauge, end: true, perm: 'loans' },
+  { to: '/loans/borrowers', label: 'Borrowers', icon: Users, perm: 'loans' },
   { to: '/loans/all', label: 'All Loans', icon: Landmark, perm: 'loans' },
   { to: '/loans/collections', label: 'Collections', icon: PhoneCall, perm: 'loan_collections' },
+  { to: '/loans/settlements', label: 'Settlements', icon: Banknote, perm: 'loan_settlements' },
+  { to: '/loans/collateral', label: 'Collateral', icon: ShieldCheck, perm: 'loans' },
   { to: '/loans/payments', label: 'Payments', icon: Wallet, perm: 'loans' },
   { to: '/loans/new', label: 'New Loan', icon: FilePlus2, perm: 'loans', create: true },
   { to: '/loans/lenders', label: 'Lenders', icon: Building2, perm: 'loan_lenders' },
