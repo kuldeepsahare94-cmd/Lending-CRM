@@ -233,3 +233,31 @@ test('the dashboard asks the database once, not once per figure, and still agree
   }
   assert.equal(ctx.calls, 0);
 });
+
+test('a loan is closed when its last installment is paid, refuses more payments, and reopens if that payment is reversed', () => {
+  const { loan, installments } = svc.createLoan({ ...base, tenure: 2, amount: '20000', start_date: '2026-01-31', disbursement_date: '2026-01-31' }, 1);
+  const pay = (x, ref) => svc.postReceipt(loan.id, { amount: ((x.principal_paise + x.interest_paise) / 100).toFixed(2), payment_date: x.due_date, reference: ref }, 1);
+  pay(installments[0], 'CL-1');
+  assert.equal(svc.getLoan(loan.id).loan.status, 'Active', 'still active while money is owed');
+  const last = pay(installments[1], 'CL-2');
+  let g = svc.getLoan(loan.id);
+  assert.equal(g.loan.status, 'Closed');
+  assert.equal(g.summary.principal_outstanding_paise, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM loan_audit_log WHERE loan_id = ? AND action = 'closed'").get(loan.id).n, 1);
+  assert.throws(() => svc.postReceipt(loan.id, { amount: '10', payment_date: '2026-04-01', reference: 'CL-3' }, 1), (e) => e.status === 409 && /Closed/.test(e.message));
+  assert.ok(!svc.drill('active_loans', {}, '2026-04-15').rows.some((l) => l.id === loan.id), 'a closed loan leaves the active list');
+  assert.ok(svc.listLoans({ status: 'Closed' }, '2026-04-15').some((l) => l.id === loan.id));
+  g = svc.reverseReceipt(loan.id, last.receipt.id, 'Cheque bounced', 1);
+  assert.equal(g.loan.status, 'Active', 'money is owed again, so the loan is active again');
+  assert.ok(svc.drill('active_loans', {}, '2026-04-15').rows.some((l) => l.id === loan.id));
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM loan_audit_log WHERE loan_id = ? AND action = 'reopened'").get(loan.id).n, 1);
+});
+
+test('the demand for a period still counts installments of loans that were paid off since', () => {
+  const { loan, installments } = svc.createLoan({ ...base, tenure: 1, amount: '10000', start_date: '2026-02-28', disbursement_date: '2026-02-28' }, 1);
+  const x = installments[0];
+  svc.postReceipt(loan.id, { amount: ((x.principal_paise + x.interest_paise) / 100).toFixed(2), payment_date: x.due_date, reference: 'DM-1' }, 1);
+  assert.equal(svc.getLoan(loan.id).loan.status, 'Closed');
+  const rows = svc.drill('due_period', { period: 'this_month' }, x.due_date).rows;
+  assert.ok(rows.some((r) => r.loan_id === loan.id && r.unpaid_paise === 0), 'the paid-off loan still counts toward what fell due that month');
+});

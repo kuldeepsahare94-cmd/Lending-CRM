@@ -51,10 +51,23 @@ if (db.prepare("SELECT id FROM loans WHERE external_reference = 'DEMO' LIMIT 1")
   console.log('Sample loans are already there. Run "node seed-loan-demo.js --remove" first to start again.'); process.exit(0);
 }
 
-const made = { accounts: [], contacts: [], lenders: [], calls: [], tasks: [], docs: [] };
+const made = { accounts: [], contacts: [], lenders: [], calls: [], tasks: [], docs: [], users: [], leads: [], tickets: [] };
 const users = db.prepare('SELECT id FROM users WHERE active = 1 ORDER BY id LIMIT 5').all().map((u) => u.id);
 const U = users[0];
 const started = Date.now();
+const saveMade = () => { db.prepare('DELETE FROM loan_settings WHERE key = ?').run(KEY); db.prepare('INSERT INTO loan_settings (key, value) VALUES (?, ?)').run(KEY, JSON.stringify(made)); };
+
+// Sample collection agents so rankings and filters have more than one person. They cannot sign in
+// (inactive, no usable password) and are removed with the rest of the sample data.
+const AGENT_NAMES = ['Rohan Deshpande (sample)', 'Priya Nair (sample)', 'Amit Kulkarni (sample)', 'Sunita Patil (sample)'];
+const role = db.prepare("SELECT id FROM roles WHERE LOWER(name) NOT LIKE '%super%' ORDER BY id LIMIT 1").get();
+const agentIds = [U];
+if (role) {
+  AGENT_NAMES.forEach((name, i) => {
+    const id = Number(db.prepare('INSERT INTO users (username, password_hash, full_name, role_id, active) VALUES (?,?,?,?,?)').run(`sample_agent_${i + 1}`, 'x', name, role.id, 0).lastInsertRowid);
+    made.users.push(id); agentIds.push(id);
+  });
+}
 
 const lenders = LENDERS.map(([n, t]) => { const l = svc.createLender({ name: n + ' (sample)', party_type: t, settlement_frequency: 'Monthly' }, U); made.lenders.push(l.id); return l; });
 
@@ -87,11 +100,11 @@ function makeLoan(i) {
   const tenure = type === 'emi' ? pick([6, 12, 12, 18, 24, 36, 48, 60]) : type === 'balloon' ? pick([6, 12, 18, 24]) : pick([3, 6, 9, 12]);
   const amount = Math.round(Math.exp(Math.log(50000) + rnd() * (Math.log(5000000) - Math.log(50000))) / 1000) * 1000;
   const draft = rnd() < 0.04;
-  const startDate = draft ? addDays(T, between(3, 30)) : addDays(T, -between(25, 720));
+  const startDate = draft ? addDays(T, between(3, 30)) : addDays(T, -(rnd() < 0.08 ? between(0, Number(T.slice(8, 10)) - 1) : between(25, 720)));
   const created = svc.createLoan({
     borrower_module: bw.module, borrower_id: bw.id, business_model: model, lender_id: lender ? lender.id : null, amount: String(amount), rate_percent: (9 + between(0, 60) * 0.25).toFixed(2),
     tenure, frequency: 'monthly', interest_method: rnd() < 0.6 ? 'reducing' : 'flat', repayment_type: type, start_date: startDate, disbursement_date: draft ? null : startDate,
-    external_reference: 'DEMO', collection_agent_id: users.length ? pick(users) : null, mortgage_holder: lender ? lender.name : 'Our company (sample)',
+    external_reference: 'DEMO', collection_agent_id: pick(agentIds), mortgage_holder: lender ? lender.name : 'Our company (sample)',
   }, U);
   stats.loans += 1;
   const loan = created.loan, id = loan.id;
@@ -112,9 +125,9 @@ function makeLoan(i) {
   const bulk = Math.max(0, paidCount - 6);
   if (bulk > 0) { post(due.slice(0, bulk).reduce((t, x) => t + owed(x), 0), clip(addDays(due[bulk - 1].due_date, lag())), 'B'); stats.receipts += 1; }
   let last = null;
-  for (let k = bulk; k < paidCount; k++) { last = post(owed(due[k]), clip(addDays(due[k].due_date, lag())), String(k + 1)); stats.receipts += 1; }
+  const extra = profile === 'overpay' && D > 0 ? Math.max(100, Math.floor(owed(due[D - 1]) * (0.2 + rnd() * 1.3))) : 0;   // paid on top of the last regular payment, so it never lands on a closed loan
+  for (let k = bulk; k < paidCount; k++) { last = post(owed(due[k]) + (k === paidCount - 1 ? extra : 0), clip(addDays(due[k].due_date, lag())), String(k + 1)); stats.receipts += 1; }
   if (partialFrac && paidCount < D) { post(Math.max(100, Math.floor(owed(due[paidCount]) * partialFrac)), clip(addDays(T, -between(1, 12))), 'P'); stats.receipts += 1; }
-  if (profile === 'overpay' && D > 0) { post(Math.max(100, Math.floor(owed(due[D - 1]) * (0.2 + rnd() * 1.3))), addDays(T, -between(1, 10)), 'X'); stats.receipts += 1; }
   if (profile === 'bounced' && last) svc.reverseReceipt(id, last.receipt.id, 'Cheque bounced: insufficient funds', U);
 
   // follow-ups on anything unpaid
@@ -146,10 +159,35 @@ function makeLoan(i) {
   return { id, loan, model, lender };
 }
 
+saveMade();
+try {
 for (let i = 0; i < N; i++) {
   db.transaction(() => makeLoan(i))();
   if ((i + 1) % 100 === 0) console.log(`  ${i + 1} of ${N} loans, ${stats.receipts} payments, ${Math.round((Date.now() - started) / 1000)}s`);
 }
+
+// ---- loan enquiries (Leads) and customer service requests (Support), so those dashboard sections have data too
+const LEAD_STATUS = [['New', 30], ['Contacted', 28], ['Interested', 22], ['Follow-up', 12]];
+const LEAD_SOURCE = [['Walk-in', 30], ['Referral', 30], ['Facebook', 22], ['Instagram', 18]];
+const LOAN_TYPES = ['Home loan', 'Business loan', 'Loan against property', 'Vehicle loan', 'Personal loan', 'Gold loan'];
+db.transaction(() => {
+  for (let i = 0; i < Math.round(N * 0.16); i++) {
+    const f = pick(FIRST), l = pick(LAST);
+    const created = (rnd() < 0.1 ? addDays(T, -between(0, 6)) : addDays(T, -between(7, 90))) + 'T' + String(between(9, 18)).padStart(2, '0') + ':' + String(between(0, 59)).padStart(2, '0') + ':00.000Z';
+    made.leads.push(Number(db.prepare('INSERT INTO leads (student_name, mobile, email, city, source, status, product_interest, remarks, created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(`${f} ${l}`, '9' + String(between(700000000, 999999999)), `${f}.${l}.lead${i}@example.com`.toLowerCase(), pick(CITIES), weighted(LEAD_SOURCE), weighted(LEAD_STATUS), pick(LOAN_TYPES), 'Enquired about a ' + pick(LOAN_TYPES).toLowerCase() + ' (sample)', created).lastInsertRowid));
+  }
+  const SUBJECTS = [['Payment', 'Payment made but not showing on my loan'], ['Statement', 'Need a loan statement for tax filing'], ['Prepayment', 'Want a quote to close the loan early'], ['Documents', 'Please return original property papers'],
+    ['Interest query', 'Why is my interest different from the schedule?'], ['Payment', 'Change my EMI date'], ['Statement', 'Need a no-dues certificate']];
+  for (let i = 0; i < Math.round(N * 0.03); i++) {
+    const bw = pick(borrowers), [cat1, subject] = pick(SUBJECTS), created = addDays(T, -between(0, 30)) + 'T' + String(between(9, 18)).padStart(2, '0') + ':15:00.000Z';
+    made.tickets.push(Number(db.prepare(`INSERT INTO tickets (ticket_number, subject, account_id, contact_id, category, priority, status, source, description, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+      .run('TKT-S' + String(i + 1).padStart(4, '0'), subject + ' (sample)', bw.module === 'accounts' ? bw.id : null, bw.module === 'contacts' ? bw.id : null, cat1,
+        weighted([['Critical', 5], ['High', 15], ['Medium', 50], ['Low', 30]]), weighted([['New', 15], ['Open', 30], ['In Progress', 25], ['Resolved', 25], ['Closed', 5]]),
+        pick(['Email', 'Phone', 'Chat', 'WhatsApp', 'Web Form']), 'Customer: ' + bw.name + '. ' + subject + '.', created, created).lastInsertRowid));
+  }
+})();
+saveMade();
 
 // ---- lender settlements: older collections settled and reconciled, recent ones pending, a dispute, and a few payments reversed after settlement
 for (const l of lenders) {
@@ -168,9 +206,13 @@ for (const it of db.prepare(`SELECT i.receipt_id, i.loan_id FROM loan_settlement
   svc.reverseReceipt(it.loan_id, it.receipt_id, 'Payment returned by bank', U);
 }
 
-db.prepare('DELETE FROM loan_settings WHERE key = ?').run(KEY);
-db.prepare('INSERT INTO loan_settings (key, value) VALUES (?, ?)').run(KEY, JSON.stringify(made));
+} catch (e) {
+  saveMade();
+  console.log('Stopped part-way: ' + e.message + '. Run "node seed-loan-demo.js --remove" to clear what was added.');
+  process.exit(1);
+}
+saveMade();
 const d = svc.dashboard(T);
-console.log(`Added ${stats.loans} sample loans (${stats.draft} draft) for ${borrowers.length} borrowers, ${stats.receipts} payments, ${stats.calls} calls, ${stats.promises} promises, ${stats.collateral} collateral items, in ${Math.round((Date.now() - started) / 1000)}s.`);
+console.log(`Added ${stats.loans} sample loans (${stats.draft} draft) for ${borrowers.length} borrowers, ${made.leads.length} leads, ${made.tickets.length} support tickets, ${stats.receipts} payments, ${stats.calls} calls, ${stats.promises} promises, ${stats.collateral} collateral items, in ${Math.round((Date.now() - started) / 1000)}s.`);
 console.log(`Dashboard now shows ${d.active_loans} active loans, ${d.overdue_loans} overdue (₹${money(d.overdue_paise)}), ₹${money(d.principal_outstanding_paise)} outstanding.`);
 process.exit(0);

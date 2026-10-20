@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const lending = require('../services/loan/dashboardLending');
 const db = require('../db');
 const { requireAuth } = require('../middleware/auth');
 const M = require('../services/dashboardMetrics');
@@ -80,10 +81,11 @@ const CRM_TABLES = [
   'accounts', 'calls', 'contacts', 'leads', 'meetings', 'notes', 'opportunities', 'opportunity_stage_history',
   'payments', 'quotations', 'sales_documents', 'subscriptions', 'tasks', 'teams', 'team_members', 'tickets',
   'users', 'roles', 'role_permissions', 'module_pipelines', 'module_pipeline_stages', 'record_access_settings',
+  'loans', 'loan_installments', 'loan_receipts', 'loan_collateral', 'loan_collection_actions', 'loan_ledger',
 ];
 const CRM_TTL_MS = 2 * 60 * 1000;
 // The modules whose figures the Owner / Team filter narrows.
-const DASHBOARD_MODULES = ['leads', 'opportunities', 'tasks', 'meetings', 'calls', 'quotations', 'invoices', 'subscriptions', 'payments'];
+const DASHBOARD_MODULES = ['leads', 'loans', 'tasks', 'meetings', 'calls'];
 const crmCache = new Map();
 const crmDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: M.CRM_TIMEZONE }).format(new Date());
 
@@ -112,6 +114,8 @@ router.get('/crm', requireAuth, crmFromCache, (req, res) => {
   const today = ctx.today;
   const period = M.PERIODS[req.query.period] ? req.query.period : 'this_month';
   const can = (module) => M.canView(req.user, module);
+  // Loan figures: same shapes the dashboard already draws, produced from the same queries as the lists they link to.
+  const L = lending.build({ period, today, scope: ctx.scope, can });
 
   // A metric result plus the exact link parameters that reproduce it.
   const metric = (key, params = {}) => {
@@ -125,9 +129,7 @@ router.get('/crm', requireAuth, crmFromCache, (req, res) => {
   const attention = {
     tasks_overdue: metric('tasks_overdue'),
     tickets_high_priority: metric('tickets_high_priority'),
-    quotes_expiring: metric('quotes_expiring'),
-    renewals_due: metric('renewals_due'),
-    renewals_overdue: metric('renewals_overdue'),
+    ...L.attention,
   };
 
   // ---- Key metrics ----------------------------------------------------------
@@ -136,10 +138,7 @@ router.get('/crm', requireAuth, crmFromCache, (req, res) => {
   const kpis = {
     total_leads: metric('leads_total'),
     leads_new_week: metric('leads_new_week'),
-    // Pipeline Value and Open Opportunities are the same record set: one
-    // count, one sum.
-    open_opportunities: metric('opps_open'),
-    won_this_month: metric('opps_won_this_month'),
+    ...L.kpis,
     overdue_actions: {
       locked: tasksOverdue.locked && followupsUntasked.locked,
       count: (tasksOverdue.count || 0) + (followupsUntasked.count || 0),
@@ -199,59 +198,11 @@ router.get('/crm', requireAuth, crmFromCache, (req, res) => {
   };
 
   // ---- Performance (selected period) -----------------------------------------
-  const won = metric('opps_won', { period });
-  const lost = metric('opps_lost', { period });
-  const closed = metric('opps_closed', { period });
-  const performance = won.locked ? { locked: true } : {
-    period,
-    period_label: M.periodLabel(period, today),
-    won, lost, closed,
-    // Won ÷ (won + lost) for the same period and scope. null when nothing
-    // closed — 0% would read as failure.
-    win_rate: (won.count + lost.count) > 0 ? Math.round((won.count / (won.count + lost.count)) * 1000) / 10 : null,
-    // Won value ÷ won count, same records as Deals Won.
-    avg_deal_size: won.count > 0 ? Math.round(won.sum / won.count) : null,
-  };
+  const performance = L.performance;
 
   // ---- Where things stand ---------------------------------------------------
-  let pipeline_by_stage = null;
-  if (can('opportunities')) {
-    const sc = M.scopeClause('opp', 'o', ctx.scope);
-    const rows = db.prepare(`
-      SELECT o.stage_id, st.name, st.color, st.sort_order, pl.is_default, COUNT(*) c, COALESCE(SUM(o.amount),0) total
-        FROM opportunities o
-        LEFT JOIN module_pipeline_stages st ON st.id = o.stage_id
-        LEFT JOIN module_pipelines pl ON pl.id = st.pipeline_id
-       WHERE ${M.OPEN_OPP}${sc.sql}
-       GROUP BY o.stage_id
-       ORDER BY COALESCE(pl.is_default,0) DESC, COALESCE(st.sort_order, 999), st.name`).all(...sc.args);
-    pipeline_by_stage = {
-      metric: 'opps_open', path: '/records/opportunities', params: {},
-      total: rows.reduce((s, r) => s + r.c, 0),
-      value: rows.reduce((s, r) => s + r.total, 0),
-      stages: rows.map((r) => ({
-        stage: r.stage_id == null ? 'none' : String(r.stage_id), name: r.name || 'No stage', color: r.color,
-        count: r.c, sum: r.total, metric: 'opps_open_stage', path: '/records/opportunities', params: { stage: r.stage_id == null ? 'none' : String(r.stage_id) },
-      })),
-    };
-  }
-
-  let collections_trend = null;
-  if (can('payments')) {
-    const months = [];
-    for (let i = 5; i >= 0; i -= 1) months.push(M.shiftMonth(today.slice(0, 7), -i));
-    const points = months.map((ym) => {
-      const r = M.evaluate('payments_received_month', { ...scope, month: ym }, ctx);
-      return { month: ym, label: M.fmtMonth(ym), amount: r.sum, count: r.count, metric: 'payments_received_month', path: '/payments', params: { month: ym } };
-    });
-    const from = `${months[0]}-01`;
-    const to = M.monthBounds(months[months.length - 1])[1];
-    collections_trend = {
-      points, range_label: `${M.fmtMonth(months[0])} – ${M.fmtMonth(months[months.length - 1])}`,
-      metric: 'payments_received_range', path: '/payments', params: { from, to },
-      total: points.reduce((s, p) => s + p.amount, 0),
-    };
-  }
+  const pipeline_by_stage = L.pipeline_by_stage;
+  const collections_trend = L.collections_trend;
 
   let leads_by_source = null;
   if (can('leads')) {
@@ -269,42 +220,8 @@ router.get('/crm', requireAuth, crmFromCache, (req, res) => {
   }
 
   // ---- Money & workload -----------------------------------------------------
-  let collections = null;
-  if (can('invoices')) {
-    const invoiced = metric('invoices_basis');
-    const collected = can('payments') ? metric('payments_collected') : { locked: true };
-    const outstanding = metric('invoices_outstanding');
-    const overdue = metric('invoices_overdue');
-    collections = {
-      period_label: 'All time',
-      invoiced, collected, outstanding, overdue,
-      // Collected ÷ Total Invoiced, both on the same invoice basis.
-      collected_pct: invoiced.sum > 0 && !collected.locked ? Math.round((collected.sum / invoiced.sum) * 1000) / 10 : null,
-    };
-  }
-
-  let top_performers = null;
-  if (can('opportunities')) {
-    const r = M.periodRange(period, today);
-    const sc = M.scopeClause('opp', 'o', ctx.scope);
-    const args = [];
-    let where = 'st.is_won=1';
-    if (r) { where += ` AND ${M.localDate(M.CLOSE_DATE)} BETWEEN date(?) AND date(?)`; args.push(r[0], r[1]); }
-    const rows = db.prepare(`
-      SELECT o.owner_id, COALESCE(u.full_name, u.username, 'Unassigned') AS name, COUNT(o.id) won, COALESCE(SUM(o.amount),0) value
-        FROM opportunities o
-        JOIN module_pipeline_stages st ON st.id = o.stage_id
-        LEFT JOIN users u ON u.id = o.owner_id
-       WHERE ${where}${sc.sql}
-       GROUP BY o.owner_id ORDER BY value DESC, won DESC LIMIT 5`).all(...args, ...sc.args);
-    top_performers = {
-      period, period_label: M.periodLabel(period, today), basis: 'Won value',
-      rows: rows.map((x) => ({
-        rep: x.owner_id == null ? 'none' : String(x.owner_id), name: x.name, won: x.won, value: x.value,
-        metric: 'opps_won', path: '/records/opportunities', params: { period, rep: x.owner_id == null ? 'none' : String(x.owner_id) },
-      })),
-    };
-  }
+  const collections = L.collections;
+  const top_performers = L.top_performers;
 
   let support = null;
   if (can('tickets')) {
@@ -320,15 +237,12 @@ router.get('/crm', requireAuth, crmFromCache, (req, res) => {
   // invented figures. Each points at the metric that produced it.
   const briefDefs = [
     { key: 'followups_attention', noun: ['follow-up', 'follow-ups'], detail: 'Due today or overdue', action: 'Follow up', tone: 'purple' },
-    { key: 'opps_stalled', noun: ['opportunity', 'opportunities'], detail: `No activity in ${M.STALLED_DAYS}+ days`, action: 'Review', tone: 'blue' },
-    { key: 'quotes_expiring', noun: ['quotation', 'quotations'], detail: `Expired or expiring in ${M.QUOTE_WINDOW_DAYS} days`, action: 'Follow up', tone: 'amber' },
-    { key: 'renewals_due', noun: ['renewal', 'renewals'], detail: `Due in next ${M.RENEWAL_WINDOW_DAYS} days`, action: 'View renewals', tone: 'emerald' },
-    { key: 'payments_overdue', noun: ['payment', 'payments'], detail: 'Overdue — past due date', action: 'Collect', tone: 'rose' },
   ];
-  const brief = briefDefs.map((b) => {
+  const crmBrief = briefDefs.map((b) => {
     const m = metric(b.key);
     return { ...b, ...m, label: m.count === 1 ? b.noun[0] : b.noun[1], samples: m.locked ? [] : samplesFor(b.key, { ...scope }, ctx) };
   });
+  const brief = [...crmBrief, ...L.brief];
 
   // ---- Latest activity --------------------------------------------------------
   const latest_activity = latestActivity(can, ctx);

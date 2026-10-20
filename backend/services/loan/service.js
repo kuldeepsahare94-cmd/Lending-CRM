@@ -178,9 +178,39 @@ const BORROWER_NAME_SQL = `CASE l.borrower_module
     ELSE (SELECT TRIM(COALESCE(c.first_name,'') || ' ' || COALESCE(c.last_name,'')) FROM contacts c WHERE c.id = l.borrower_id) END`;
 const BUCKETS = [['1-7', 1, 7], ['8-30', 8, 30], ['31-60', 31, 60], ['61-90', 61, 90], ['90plus', 91, Infinity]];
 const BUCKET_LABEL = { '1-7': '1 to 7 days', '8-30': '8 to 30 days', '31-60': '31 to 60 days', '61-90': '61 to 90 days', '90plus': 'Over 90 days' };
+// Portfolio stages by days past due of a loan's oldest unpaid installment.
+const STAGES = [['current', 'Current', 0, 0], ['dpd_1_30', '1 to 30 days late', 1, 30], ['dpd_31_60', '31 to 60 days late', 31, 60], ['dpd_61_90', '61 to 90 days late', 61, 90], ['dpd_90plus', 'Over 90 days late', 91, Infinity]];
 const dayDiff = (a, b) => Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 864e5);
 const sumOf = (rows, f) => rows.reduce((t, r) => t + f(r), 0);
 const today = () => new Date().toISOString().slice(0, 10);
+
+// Reporting periods, matching the CRM dashboard's: this month, last month, this quarter, this year, all time.
+function monthEnd(ym) { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); }
+function shiftYm(ym, n) { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); }
+function periodBounds(period = 'this_month', asOf = today()) {
+  const ym = asOf.slice(0, 7);
+  switch (period) {
+    case 'all_time': return null;
+    case 'last_month': { const p = shiftYm(ym, -1); return [p + '-01', monthEnd(p)]; }
+    case 'this_quarter': { const m = Number(ym.slice(5, 7)); const q = ym.slice(0, 4) + '-' + String(Math.floor((m - 1) / 3) * 3 + 1).padStart(2, '0'); return [q + '-01', monthEnd(shiftYm(q, 2))]; }
+    case 'this_year': return [ym.slice(0, 4) + '-01-01', ym.slice(0, 4) + '-12-31'];
+    case 'this_month': default: return [ym + '-01', monthEnd(ym)];
+  }
+}
+const inRange = (d, r) => !r || (d && d >= r[0] && d <= r[1]);
+
+// Owner / team filter at the top of the dashboard: the people whose loans are shown (collection agent or loan owner).
+function userScope(q = {}) {
+  if (q.owner) return new Set([Number(q.owner)]);
+  if (q.team) {
+    const t = db.prepare('SELECT id, lead_user_id FROM teams WHERE id = ?').get(Number(q.team));
+    if (!t) return new Set();
+    const ids = db.prepare('SELECT user_id FROM team_members WHERE team_id = ?').all(t.id).map((r) => r.user_id);
+    if (t.lead_user_id) ids.push(t.lead_user_id);
+    return new Set(ids.map(Number));
+  }
+  return null;
+}
 
 // Unpaid installments of active loans, with the loan and borrower beside each.
 function openInstallments(asOf, untilDate) {
@@ -191,6 +221,19 @@ function openInstallments(asOf, untilDate) {
     loan_id: x.loan_id, loan_number: x.loan_number, borrower_name: x.borrower_name, business_model: x.business_model, seq: x.seq, due_date: x.due_date,
     days_overdue: Math.max(0, dayDiff(asOf, x.due_date)), amount_paise: remaining(x), status: engine.installmentStatus(x, asOf, x.grace_days),
   }));
+}
+
+// Every installment falling due in a date range on active loans, paid or not (the "demand" for that period).
+function installmentsDueBetween(asOf, from, to) {
+  const rows = db.prepare(`SELECT i.*, l.loan_number, l.business_model, l.grace_days, ${BORROWER_NAME_SQL} AS borrower_name
+      FROM loan_installments i JOIN loans l ON l.id = i.loan_id AND l.active_version_id = i.version_id
+      WHERE l.status IN ('Active','Delinquent','Closed')${from ? ' AND i.due_date >= ? AND i.due_date <= ?' : ''}`).all(...(from ? [from, to] : []));
+  return rows.map((x) => {
+    const due = x.principal_paise + x.interest_paise + x.fees_paise, paid = x.paid_principal_paise + x.paid_interest_paise + x.paid_fees_paise;
+    return { loan_id: x.loan_id, loan_number: x.loan_number, borrower_name: x.borrower_name, business_model: x.business_model, seq: x.seq, due_date: x.due_date,
+      days_overdue: remaining(x) > 0 ? Math.max(0, dayDiff(asOf, x.due_date)) : 0, amount_paise: due, paid_paise: Math.min(paid, due), unpaid_paise: Math.max(due - paid, 0),
+      status: engine.installmentStatus(x, asOf, x.grace_days) };
+  });
 }
 
 function listReceipts(q = {}) {
@@ -207,32 +250,62 @@ const DRILLS = {
   active_loans: { title: 'Active loans', kind: 'loans', why: 'Loans that are active or delinquent. The amount is their principal outstanding.' },
   outstanding: { title: 'Principal outstanding', kind: 'loans', why: 'Active loans that still have principal to collect. The amount is the principal outstanding.' },
   disbursed: { title: 'Total disbursed', kind: 'loans', why: 'Every loan that has been disbursed. The amount is the total disbursed.' },
+  disbursed_period: { title: 'Loans disbursed', kind: 'loans', why: 'Loans disbursed in the selected period. The amount is the total disbursed.' },
+  portfolio: { title: 'Loan portfolio', kind: 'loans', why: 'Active loans with principal outstanding, by how late their oldest unpaid installment is. The amount is the principal outstanding.' },
   model: { title: 'Active loans by business model', kind: 'loans', why: 'Active loans of one business model.' },
   overdue: { title: 'Overdue installments', kind: 'installments', why: 'Installments past their due date (after any grace days) with money still unpaid. The amount is the unpaid part.' },
   due_today: { title: 'Due today', kind: 'installments', why: 'Unpaid installments falling due today.' },
   due_soon: { title: 'Due in the next 7 days', kind: 'installments', why: 'Unpaid installments falling due from today through the next 7 days.' },
+  due_period: { title: 'Installments due', kind: 'installments', why: 'Every installment falling due in the selected period, paid or not. The amount is the total due.' },
   collected_month: { title: 'Collected this month', kind: 'receipts', why: 'Payments posted with a payment date in this month. Reversed payments are not counted.' },
+  collected_period: { title: 'Payments collected', kind: 'receipts', why: 'Payments posted with a payment date in the selected period. Reversed payments are not counted.' },
   unallocated: { title: 'Unallocated credit', kind: 'receipts', why: 'Payments received that were more than the installments due. The amount is the part not yet applied.' },
 };
+const PERIOD_NAME = { this_month: 'this month', last_month: 'last month', this_quarter: 'this quarter', this_year: 'this year', all_time: 'all time' };
 
-// Work out the loan list and the open installments once per request, however many figures are asked for.
-function makeCtx(asOf) {
+// Work out the loan list, open installments and payments once per request, however many figures are asked for.
+function makeCtx(asOf, only = null) {
   const memo = {};
   const once = (k, f) => { if (!(k in memo)) memo[k] = f(); return memo[k]; };
-  return { loans: () => once('loans', () => listLoans({}, asOf)), open: (until) => once('open' + until, () => openInstallments(asOf, until)) };
+  const mine = (l) => !only || only.has(Number(l.collection_agent_id)) || only.has(Number(l.assigned_user_id));
+  const ctx = {
+    only,
+    loans: () => once('loans', () => listLoans({}, asOf).filter(mine)),
+    ids: () => once('ids', () => new Set(ctx.loans().map((l) => l.id))),
+    open: (until) => once('open' + until, () => (only ? openInstallments(asOf, until).filter((x) => ctx.ids().has(x.loan_id)) : openInstallments(asOf, until))),
+    due: (from, to) => once('due' + from + to, () => (only ? installmentsDueBetween(asOf, from, to).filter((x) => ctx.ids().has(x.loan_id)) : installmentsDueBetween(asOf, from, to))),
+    receipts: () => once('receipts', () => (only ? listReceipts({ status: 'Posted' }).filter((r) => ctx.ids().has(r.loan_id)) : listReceipts({ status: 'Posted' }))),
+    agentOf: () => once('agentOf', () => new Map(ctx.loans().map((l) => [l.id, l.collection_agent_id || null]))),
+  };
+  return ctx;
 }
 
 function drill(metric, q = {}, asOf = today()) {
   const def = DRILLS[metric];
   if (!def) throw new LoanError('Unknown dashboard figure: ' + metric, 404);
   const next7 = engine.addPeriods(asOf, 1, 'weekly');
-  const ctx = q.__ctx || makeCtx(asOf);
+  const ctx = q.__ctx || makeCtx(asOf, userScope(q));
   const loans = () => ctx.loans();
   let rows, amount, title = def.title, filters = {};
+  const period = q.period && PERIOD_NAME[q.period] ? q.period : 'this_month';
+  const range = q.month ? [q.month + '-01', monthEnd(q.month)] : q.from && q.to ? [q.from, q.to] : periodBounds(period, asOf);
   if (metric === 'active_loans') { rows = loans().filter((l) => ACTIVE.includes(l.status)); amount = sumOf(rows, (l) => l.principal_outstanding_paise); }
   else if (metric === 'outstanding') { rows = loans().filter((l) => ACTIVE.includes(l.status) && l.principal_outstanding_paise > 0); amount = sumOf(rows, (l) => l.principal_outstanding_paise); }
   else if (metric === 'disbursed') { rows = loans().filter((l) => l.disbursed_paise > 0); amount = sumOf(rows, (l) => l.disbursed_paise); }
-  else if (metric === 'model') {
+  else if (metric === 'disbursed_period') {
+    rows = loans().filter((l) => l.disbursed_paise > 0 && inRange(l.disbursement_date, range)); amount = sumOf(rows, (l) => l.disbursed_paise);
+    filters.period = q.month ? undefined : period; title = 'Loans disbursed ' + (q.month ? 'in ' + q.month : PERIOD_NAME[period]);
+  } else if (metric === 'portfolio') {
+    const worst = new Map();
+    for (const x of ctx.open(asOf)) if (x.status === 'Overdue') worst.set(x.loan_id, Math.max(worst.get(x.loan_id) || 0, x.days_overdue));
+    rows = loans().filter((l) => ACTIVE.includes(l.status) && l.principal_outstanding_paise > 0).map((l) => ({ ...l, dpd: worst.get(l.id) || 0 }));
+    if (q.stage) {
+      const st = STAGES.find((s) => s[0] === q.stage);
+      if (!st) throw new LoanError('Unknown portfolio stage: ' + q.stage);
+      rows = rows.filter((l) => l.dpd >= st[2] && l.dpd <= st[3]); filters.stage = q.stage; title = 'Portfolio: ' + st[1].toLowerCase();
+    }
+    amount = sumOf(rows, (l) => l.principal_outstanding_paise);
+  } else if (metric === 'model') {
     if (!q.model) throw new LoanError('Choose a business model.');
     rows = loans().filter((l) => ACTIVE.includes(l.status) && l.business_model === q.model); amount = sumOf(rows, (l) => l.principal_outstanding_paise); filters.model = q.model;
   } else if (metric === 'overdue') {
@@ -246,8 +319,16 @@ function drill(metric, q = {}, asOf = today()) {
     amount = sumOf(rows, (x) => x.amount_paise);
   } else if (metric === 'due_today') { rows = ctx.open(asOf).filter((x) => x.due_date === asOf); amount = sumOf(rows, (x) => x.amount_paise); }
   else if (metric === 'due_soon') { rows = ctx.open(next7).filter((x) => x.due_date >= asOf); amount = sumOf(rows, (x) => x.amount_paise); }
-  else if (metric === 'collected_month') { rows = listReceipts({ status: 'Posted', month: asOf.slice(0, 7) }); amount = sumOf(rows, (r) => r.amount_paise); }
-  else { rows = listReceipts({ status: 'Posted', unallocated: true }); amount = sumOf(rows, (r) => r.unallocated_paise); }
+  else if (metric === 'due_period') {
+    rows = ctx.due(range && range[0], range && range[1]); amount = sumOf(rows, (x) => x.amount_paise);
+    filters.period = q.month ? undefined : period; title = 'Installments due ' + (q.month ? 'in ' + q.month : PERIOD_NAME[period]);
+  } else if (metric === 'collected_month' || metric === 'collected_period') {
+    const r = metric === 'collected_month' ? [asOf.slice(0, 7) + '-01', monthEnd(asOf.slice(0, 7))] : range;
+    rows = ctx.receipts().filter((x) => inRange(x.payment_date, r));
+    if (q.agent) { const agents = ctx.agentOf(); const want = q.agent === 'none' ? null : Number(q.agent); rows = rows.filter((x) => (agents.get(x.loan_id) || null) === want); filters.agent = q.agent; }
+    amount = sumOf(rows, (x) => x.amount_paise);
+    if (metric === 'collected_period') { filters.period = q.month ? undefined : period; title = 'Payments collected ' + (q.month ? 'in ' + q.month : PERIOD_NAME[period]); }
+  } else { rows = ctx.receipts().filter((x) => x.unallocated_paise > 0); amount = sumOf(rows, (x) => x.unallocated_paise); }
   const loanIds = new Set(rows.map((r) => (def.kind === 'loans' ? r.id : r.loan_id)));
   return { metric, title, why: def.why, kind: def.kind, filters, as_of: asOf, rows, count: rows.length, loans_count: loanIds.size, amount_paise: amount };
 }
@@ -283,6 +364,9 @@ function dashboard(asOf = today()) {
     loans_by_model: byModel,
   };
 }
+
+const stillOwed = (loanId, versionId) => db.prepare(`SELECT COALESCE(SUM(principal_paise + interest_paise + fees_paise - paid_principal_paise - paid_interest_paise - paid_fees_paise), 0) AS n
+    FROM loan_installments WHERE loan_id = ? AND version_id = ?`).get(loanId, versionId).n;
 
 function postReceipt(loanId, input, userId) {
   const amount = toPaise(input.amount, 'Amount');
@@ -323,6 +407,11 @@ function postReceipt(loanId, input, userId) {
     ledger(loanId, 'Receipt', 'fees', -sumOf('fees_paise'), src, input.payment_date, userId);
     ledger(loanId, 'Receipt', 'unallocated', -unallocated_paise, src, input.payment_date, userId);
     audit(loanId, 'receipt', rid, 'posted', null, { amount_paise: amount, reference, allocations, unallocated_paise }, null, userId);
+    // Everything on the schedule is now paid: the loan is closed and drops out of the active lists.
+    if (stillOwed(loanId, loan.active_version_id) <= 0) {
+      db.prepare("UPDATE loans SET status = 'Closed', updated_at = ? WHERE id = ?").run(now(), loanId);
+      audit(loanId, 'loan', loanId, 'closed', { status: loan.status }, { status: 'Closed' }, 'All installments are paid', userId);
+    }
     return rid;
   });
   const rid = run();
@@ -347,6 +436,11 @@ function reverseReceipt(loanId, receiptId, reason, userId) {
     for (const e of originals) ledger(loanId, 'Reversal', e.component, -e.amount_paise, { type: 'receipt', id: receiptId }, new Date().toISOString().slice(0, 10), userId, e.id, reason);
     db.prepare('UPDATE loan_receipts SET status = ?, reversal_reason = ?, reversed_by = ?, reversed_at = ? WHERE id = ?').run('Reversed', reason, userId || null, now(), receiptId);
     audit(loanId, 'receipt', receiptId, 'reversed', { status: 'Posted' }, { status: 'Reversed' }, reason, userId);
+    const loan = db.prepare('SELECT status, active_version_id FROM loans WHERE id = ?').get(loanId);
+    if (loan.status === 'Closed' && stillOwed(loanId, loan.active_version_id) > 0) {
+      db.prepare("UPDATE loans SET status = 'Active', updated_at = ? WHERE id = ?").run(now(), loanId);
+      audit(loanId, 'loan', loanId, 'reopened', { status: 'Closed' }, { status: 'Active' }, 'A payment was reversed, so money is owed again', userId);
+    }
   });
   run();
   return getLoan(loanId);
@@ -369,5 +463,5 @@ function createLender(input, userId) {
 }
 const listLenders = () => db.prepare('SELECT * FROM loan_lenders ORDER BY name').all();
 
-const internals = { openInstallments, remaining, audit, setting, ACTIVE, today, BORROWER_NAME_SQL };
+const internals = { openInstallments, remaining, audit, setting, ACTIVE, today, BORROWER_NAME_SQL, makeCtx, STAGES, BUCKETS, periodBounds, monthEnd, shiftYm, PERIOD_NAME };
 module.exports = { internals, LoanError, toPaise, toRateE4, previewSchedule, createLoan, getLoan, listLoans, dashboard, drill, listReceipts, postReceipt, reverseReceipt, getLedger, createLender, listLenders };

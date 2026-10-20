@@ -7,6 +7,7 @@ const col = require('../services/loan/collections');
 const stl = require('../services/loan/settlements');
 const cat = require('../services/loan/collateral');
 const bor = require('../services/loan/borrowers');
+const sample = require('../services/loan/sampleData');
 
 const send = (res, fn) => {
   try { res.json(fn()); }
@@ -54,6 +55,8 @@ router.post('/collateral/:cid/release', requirePermission('loans', 'edit'), (req
 router.post('/:id/collateral', requirePermission('loans', 'create'), (req, res) => send(res, () => cat.create(Number(req.params.id), req.body || {}, uid(req))));
 router.get('/borrowers', requirePermission('loans', 'view'), (req, res) => send(res, () => bor.list(req.query, req.query.as_of || undefined)));
 router.get('/borrowers/:module/:bid', requirePermission('loans', 'view'), (req, res) => send(res, () => bor.get(req.params.module, Number(req.params.bid), req.query.as_of || undefined)));
+router.get('/sample-data', requirePermission('settings', 'edit'), (req, res) => send(res, () => sample.status()));
+router.post('/sample-data', requirePermission('settings', 'edit'), (req, res) => send(res, () => sample.start(req.body && req.body.action)));
 router.get('/receipts', requirePermission('loans', 'view'), (req, res) => send(res, () => paged(svc.listReceipts(req.query), req.query)));
 router.get('/', requirePermission('loans', 'view'), (req, res) => send(res, () => paged(svc.listLoans(req.query, req.query.as_of), req.query)));
 router.post('/', requirePermission('loans', 'create'), (req, res) => send(res, () => svc.createLoan(req.body, uid(req))));

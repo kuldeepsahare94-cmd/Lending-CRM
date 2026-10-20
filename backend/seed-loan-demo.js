@@ -33,7 +33,7 @@ const owed = (x) => x.principal_paise + x.interest_paise + x.fees_paise;
 
 function remove() {
   const row = db.prepare('SELECT value FROM loan_settings WHERE key = ?').get(KEY);
-  const made = Object.assign({ accounts: [], contacts: [], lenders: [], calls: [], tasks: [], docs: [] }, row ? JSON.parse(row.value) : {});
+  const made = Object.assign({ accounts: [], contacts: [], lenders: [], calls: [], tasks: [], docs: [], users: [], leads: [], tickets: [] }, row ? JSON.parse(row.value) : {});
   const chunk = (a, n = 400) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
   const inList = (ids) => ids.map(() => '?').join(',');
   const count = db.prepare("SELECT COUNT(*) AS n FROM loans WHERE external_reference = 'DEMO'").get().n;
@@ -46,7 +46,10 @@ function remove() {
     db.prepare("DELETE FROM loans WHERE external_reference = 'DEMO'").run();
     for (const part of chunk(made.docs)) db.prepare(`DELETE FROM documents WHERE id IN (${inList(part)})`).run(...part);
     for (const part of chunk(made.calls)) db.prepare(`DELETE FROM calls WHERE id IN (${inList(part)})`).run(...part);
+    for (const part of chunk(made.leads)) db.prepare(`DELETE FROM leads WHERE id IN (${inList(part)})`).run(...part);
+    for (const part of chunk(made.tickets)) db.prepare(`DELETE FROM tickets WHERE id IN (${inList(part)})`).run(...part);
     for (const part of chunk(made.tasks)) db.prepare(`DELETE FROM tasks WHERE id IN (${inList(part)})`).run(...part);
+    for (const part of chunk(made.users)) db.prepare(`DELETE FROM users WHERE id IN (${inList(part)})`).run(...part);
     for (const part of chunk(made.accounts)) db.prepare(`DELETE FROM accounts WHERE id IN (${inList(part)}) AND id NOT IN (SELECT borrower_id FROM loans WHERE borrower_module = 'accounts')`).run(...part);
     for (const part of chunk(made.contacts)) db.prepare(`DELETE FROM contacts WHERE id IN (${inList(part)}) AND id NOT IN (SELECT borrower_id FROM loans WHERE borrower_module = 'contacts')`).run(...part);
     for (const part of chunk(made.lenders)) {
