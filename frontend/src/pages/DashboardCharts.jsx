@@ -54,7 +54,7 @@ const onKeyActivate = (fn) => (e) => {
 };
 
 // Pipeline by stage: open opportunities only (Won and Lost are excluded),
-// so the centre total is the Open Opportunities figure for the same scope.
+// so the centre total is the Active Loans figure for the same scope.
 export function StageDonut({ stages = [], total = 0, onSelect, onSelectAll }) {
   const data = stages.filter((s) => s.count > 0);
   return (
@@ -86,7 +86,7 @@ export function StageDonut({ stages = [], total = 0, onSelect, onSelectAll }) {
         className="dash-link absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[84px] h-[84px] rounded-full flex flex-col items-center justify-center"
         aria-label={`${total} open opportunities — view all`}>
         <span className="text-[24px] font-bold leading-none tabular-nums" style={{ color: 'var(--color-ink)' }}>{total}</span>
-        <span className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>Open</span>
+        <span className="text-[11px] mt-1" style={{ color: 'var(--color-muted)' }}>Active</span>
       </button>
     </div>
   );

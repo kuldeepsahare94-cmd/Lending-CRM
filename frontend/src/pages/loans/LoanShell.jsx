@@ -3,11 +3,10 @@
  * on the Support Desk shell so the two feel like one product.
  */
 import { NavLink, Outlet } from 'react-router-dom';
-import { Gauge, Landmark, FilePlus2, Building2, Wallet, PhoneCall, ShieldCheck, Banknote, Users } from 'lucide-react';
+import { Landmark, FilePlus2, Building2, Wallet, PhoneCall, ShieldCheck, Banknote, Users, DatabaseZap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const NAV = [
-  { to: '/loans', label: 'Dashboard', icon: Gauge, end: true, perm: 'loans' },
   { to: '/loans/borrowers', label: 'Borrowers', icon: Users, perm: 'loans' },
   { to: '/loans/all', label: 'All Loans', icon: Landmark, perm: 'loans' },
   { to: '/loans/collections', label: 'Collections', icon: PhoneCall, perm: 'loan_collections' },
@@ -15,13 +14,14 @@ const NAV = [
   { to: '/loans/collateral', label: 'Collateral', icon: ShieldCheck, perm: 'loans' },
   { to: '/loans/payments', label: 'Payments', icon: Wallet, perm: 'loans' },
   { to: '/loans/new', label: 'New Loan', icon: FilePlus2, perm: 'loans', create: true },
+  { to: '/loans/sample-data', label: 'Sample data', icon: DatabaseZap, perm: 'settings', edit: true },
   { to: '/loans/lenders', label: 'Lenders', icon: Building2, perm: 'loan_lenders' },
 ];
 
 export default function LoanShell() {
   const { user } = useAuth();
   const perms = user?.permissions || {};
-  const items = NAV.filter((n) => perms[n.perm]?.view && (!n.create || perms[n.perm]?.create));
+  const items = NAV.filter((n) => perms[n.perm]?.view && (!n.create || perms[n.perm]?.create) && (!n.edit || perms[n.perm]?.edit));
   return (
     <div className="sd-canvas -m-4 sm:-m-6 p-4 sm:p-6 min-h-full">
       <div className="w-full flex flex-col lg:flex-row gap-5">

@@ -432,6 +432,8 @@ export const api = {
   loanCollateralRelease: (id, reason) => req('POST', `/loans/collateral/${id}/release`, { reason }),
   loanBorrowers: (params) => req('GET', '/loans/borrowers' + qs(params)),
   loanBorrower: (module, id) => req('GET', `/loans/borrowers/${module}/${id}`),
+  loanSampleStatus: () => req('GET', '/loans/sample-data'),
+  loanSampleRun: (action) => req('POST', '/loans/sample-data', { action }),
   loanLenders: () => req('GET', '/loans/lenders'),
   loanLenderCreate: (body) => req('POST', '/loans/lenders', body),
 

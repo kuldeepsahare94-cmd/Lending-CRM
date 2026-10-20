@@ -1,7 +1,6 @@
 import lazy from './lazyWithRecovery';
 import { registerRoutePreloads } from './routePreload';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import LoanHome from './pages/loans/LoanHome';
 import { AuthProvider } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -70,7 +69,6 @@ const UniversalKanban = lazy(() => import('./pages/universal/UniversalKanban'));
 // Loan & Mortgage workspace
 import LoanShell from './pages/loans/LoanShell';
 const loanPage = (name) => lazy(() => import('./pages/loans/LoanPages').then((m) => ({ default: m[name] })));
-const LoanDashboard = loanPage('LoanDashboard');
 const LoanList = loanPage('LoanList');
 const NewLoan = loanPage('NewLoan');
 const LoanDetail = loanPage('LoanDetail');
@@ -81,6 +79,7 @@ const LoanCollections = loanPage('LoanCollections');
 const LoanSettlements = loanPage('LoanSettlements');
 const LoanCollateral = loanPage('LoanCollateral');
 const LoanBorrowers = loanPage('LoanBorrowers');
+const LoanSampleData = loanPage('LoanSampleData');
 const LoanBorrowerDetail = loanPage('LoanBorrowerDetail');
 // Support Desk workspace
 const CommandCenter = lazy(() => import('./pages/support/CommandCenter'));
@@ -163,7 +162,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-              <Route path="/" element={<LoanHome />} />
+              <Route path="/" element={<Dashboard />} />
               {/* Common aliases — these previously matched nothing and
                   rendered a blank page. */}
               <Route path="/dashboard" element={<Navigate to="/" replace />} />
@@ -224,7 +223,7 @@ export default function App() {
               <Route path="/records/:moduleApiName/:id" element={<MaybeSupportShell><UniversalDetail /></MaybeSupportShell>} />
               {/* Loans: dashboard, loan list, new loan, loan page and lenders. */}
               <Route path="/loans" element={<LoanShell />}>
-                <Route index element={<LoanDashboard />} />
+                <Route index element={<Navigate to="/" replace />} />
                 <Route path="all" element={<LoanList />} />
                 <Route path="drill/:metric" element={<LoanDrill />} />
                 <Route path="payments" element={<LoanPayments />} />
@@ -232,6 +231,7 @@ export default function App() {
                 <Route path="settlements" element={<LoanSettlements />} />
                 <Route path="collateral" element={<LoanCollateral />} />
                 <Route path="borrowers" element={<LoanBorrowers />} />
+                <Route path="sample-data" element={<LoanSampleData />} />
                 <Route path="borrowers/:module/:bid" element={<LoanBorrowerDetail />} />
                 <Route path="new" element={<NewLoan />} />
                 <Route path="lenders" element={<LoanLenders />} />

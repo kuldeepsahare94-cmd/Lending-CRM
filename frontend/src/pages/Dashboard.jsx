@@ -252,7 +252,7 @@ function ScopeSelect({ data, ctx, onChange }) {
 // Today's CRM brief + Ask AI
 // ---------------------------------------------------------------------------
 const TONES = { purple: COLORS.purple, blue: COLORS.blue, amber: COLORS.amber, emerald: COLORS.emerald, rose: COLORS.rose };
-const BRIEF_ICON = { followups_attention: PhoneCall, opps_stalled: Target, quotes_expiring: FileText, renewals_due: Repeat, payments_overdue: Wallet };
+const BRIEF_ICON = { followups_attention: PhoneCall, loans_overdue: Wallet, promises_missed: PhoneCall, loans_due_soon: CalendarClock, loans_weak_security: AlertTriangle };
 
 function openAssistant(prompt) {
   window.dispatchEvent(new CustomEvent('icrm:open-assistant', { detail: { prompt } }));
@@ -418,7 +418,7 @@ function AttentionCard({ m, icon: Icon, tone, label, sub, action, ctx, extra }) 
 
 function NeedsAttention({ attention, ctx, windows }) {
   const a = attention;
-  const renewalOverdue = a.renewals_overdue;
+  const overdueInstallments = a.overdue_installments;
   return (
     <section className="rounded-2xl p-4 mt-4" aria-label="Needs attention"
       style={{ background: 'linear-gradient(115deg, rgba(255,228,233,0.9) 0%, rgba(255,241,242,0.85) 45%, rgba(255,247,237,0.85) 100%)', border: '1px solid rgba(251,113,133,0.28)', boxShadow: '0 10px 30px -18px rgba(225,29,72,0.45)' }}>
@@ -435,19 +435,19 @@ function NeedsAttention({ attention, ctx, windows }) {
         <ViewAllMenu items={[
           { label: 'Overdue tasks', to: drillHref(a.tasks_overdue, ctx), count: a.tasks_overdue.count },
           { label: 'High-priority tickets', to: drillHref(a.tickets_high_priority, ctx), count: a.tickets_high_priority.count },
-          { label: 'Expired / expiring quotations', to: drillHref(a.quotes_expiring, ctx), count: a.quotes_expiring.count },
-          { label: `Renewals due (next ${windows.renewal_days} days)`, to: drillHref(a.renewals_due, ctx), count: a.renewals_due.count },
-          { label: 'Overdue renewals', to: drillHref(renewalOverdue, ctx), count: renewalOverdue.count },
+          { label: 'Missed promises to pay', to: drillHref(a.promises_missed, ctx), count: a.promises_missed.count },
+          { label: 'Installments due in the next 7 days', to: drillHref(a.due_soon, ctx), count: a.due_soon.count },
+          { label: 'Overdue installments', to: drillHref(overdueInstallments, ctx), count: overdueInstallments.count },
         ]} />
       </div>
       <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-3.5">
         <AttentionCard m={a.tasks_overdue} icon={CalendarClock} tone={COLORS.rose} label="Overdue tasks" sub="Not completed, due before today" action="View Tasks" ctx={ctx} />
         <AttentionCard m={a.tickets_high_priority} icon={Zap} tone={COLORS.orange} label="High-priority tickets" sub="Open · Urgent and High" action="Resolve" ctx={ctx} />
-        <AttentionCard m={a.quotes_expiring} icon={FileText} tone={COLORS.amber} label="Expired / expiring quotations" sub={`Sent or viewed · expired or ≤ ${windows.quote_days} days`} action="Follow Up" ctx={ctx} />
-        <AttentionCard m={a.renewals_due} icon={Repeat} tone={COLORS.emerald} label="Renewals due" sub={`Next ${windows.renewal_days} days`} action="View Renewals" ctx={ctx}
-          extra={!renewalOverdue.locked && renewalOverdue.count > 0 && (
-            <DLink to={drillHref(renewalOverdue, ctx)} className="dash-above inline-block text-[11px] font-semibold mt-0.5" style={{ color: '#E11D48' }}>
-              + {renewalOverdue.count} overdue renewal{renewalOverdue.count === 1 ? '' : 's'}
+        <AttentionCard m={a.promises_missed} icon={PhoneCall} tone={COLORS.amber} label="Missed promises to pay" sub="Promised date passed, still unpaid" action="Follow up" ctx={ctx} />
+        <AttentionCard m={a.due_soon} icon={CalendarClock} tone={COLORS.emerald} label="Installments due soon" sub="Falling due in the next 7 days" action="View" ctx={ctx}
+          extra={!overdueInstallments.locked && overdueInstallments.count > 0 && (
+            <DLink to={drillHref(overdueInstallments, ctx)} className="dash-above inline-block text-[11px] font-semibold mt-0.5" style={{ color: '#E11D48' }}>
+              + {overdueInstallments.count} overdue installment{overdueInstallments.count === 1 ? '' : 's'}
             </DLink>
           )} />
       </div>
@@ -552,7 +552,8 @@ function OverdueActionsCard({ oa, ctx }) {
 }
 
 function KeyMetrics({ k, ctx, monthLabel }) {
-  const open = k.open_opportunities;
+  const open = k.active_loans;
+  const disb = k.disbursed_this_month;
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3.5">
       <Kpi label="Total Leads" icon={Users} tone={COLORS.purple} value={k.total_leads.count} locked={k.total_leads.locked}
@@ -564,12 +565,12 @@ function KeyMetrics({ k, ctx, monthLabel }) {
           </DLink>
         )}
       </Kpi>
-      <Kpi label="Pipeline Value" icon={Target} tone={COLORS.teal} value={inr(open.sum)} locked={open.locked}
-        sub="Open opportunities" to={drillHref(open, ctx)} />
-      <Kpi label="Open Opportunities" icon={TrendingUp} tone={COLORS.amber} value={open.count} locked={open.locked}
+      <Kpi label="Principal Outstanding" icon={Target} tone={COLORS.teal} value={inr(open.sum)} locked={open.locked}
+        sub="Active loans" to={drillHref(open, ctx)} />
+      <Kpi label="Active Loans" icon={TrendingUp} tone={COLORS.amber} value={open.count} locked={open.locked}
         sub="As of today" to={drillHref(open, ctx)} />
-      <Kpi label="Won This Month" icon={Trophy} tone={COLORS.emerald} value={inr(k.won_this_month.sum)} locked={k.won_this_month.locked}
-        sub={`${monthLabel} · ${k.won_this_month.count ?? 0} deal${k.won_this_month.count === 1 ? '' : 's'}`} to={drillHref(k.won_this_month, ctx)} />
+      <Kpi label="Disbursed This Month" icon={Trophy} tone={COLORS.emerald} value={inr(disb.sum)} locked={disb.locked}
+        sub={`${monthLabel} · ${disb.count ?? 0} loan${disb.count === 1 ? '' : 's'}`} to={drillHref(disb, ctx)} />
       <OverdueActionsCard oa={k.overdue_actions} ctx={ctx} />
     </div>
   );
@@ -741,14 +742,14 @@ function Performance({ p, ctx }) {
   );
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-      {perfTile('Deals Won', <Trophy className="w-5 h-5" />, COLORS.purple, p.won.count, p.won, inr(p.won.sum))}
-      {perfTile('Deals Lost', <AlertTriangle className="w-5 h-5" />, COLORS.rose, p.lost.count, p.lost, inr(p.lost.sum))}
-      {perfTile('Win Rate', <Target className="w-5 h-5" />, COLORS.purple, p.win_rate === null ? '—' : `${p.win_rate}%`, p.closed,
-        p.win_rate === null ? 'No deals closed in this period' : `${p.won.count} won of ${p.closed.count} closed`,
-        'Win rate = deals won ÷ (deals won + deals lost), closed in the selected period.')}
-      {perfTile('Average Deal Size', <IndianRupee className="w-5 h-5" />, COLORS.blue, p.avg_deal_size === null ? '—' : inr(p.avg_deal_size), p.won,
-        p.avg_deal_size === null ? 'No deals won in this period' : `${inr(p.won.sum)} ÷ ${p.won.count} won`,
-        'Average deal size = total value of deals won ÷ number of deals won, in the selected period.')}
+      {perfTile('Loans Disbursed', <Trophy className="w-5 h-5" />, COLORS.purple, p.disbursed.count, p.disbursed, inr(p.disbursed.sum))}
+      {perfTile('Payments Collected', <Wallet className="w-5 h-5" />, COLORS.emerald, inr(p.collected.sum), p.collected, `${p.collected.count} payment${p.collected.count === 1 ? '' : 's'}`)}
+      {perfTile('Collection Efficiency', <Target className="w-5 h-5" />, COLORS.purple, p.efficiency === null ? '—' : `${p.efficiency}%`, p.demand,
+        p.efficiency === null ? 'No installments fell due in this period' : `${inr(p.collected.sum)} collected ÷ ${inr(p.demand.sum)} due`,
+        'Collection efficiency = payments collected in the period ÷ installments falling due in the same period. It can pass 100% when overdue amounts are recovered.')}
+      {perfTile('Average Loan Size', <IndianRupee className="w-5 h-5" />, COLORS.blue, p.avg_loan_size === null ? '—' : inr(p.avg_loan_size), p.disbursed,
+        p.avg_loan_size === null ? 'No loans disbursed in this period' : `${inr(p.disbursed.sum)} ÷ ${p.disbursed.count} loan${p.disbursed.count === 1 ? '' : 's'}`,
+        'Average loan size = total disbursed ÷ number of loans disbursed, in the selected period.')}
     </div>
   );
 }
@@ -761,11 +762,11 @@ function ChartFallback({ height }) {
 }
 
 function PipelineByStage({ pbs, ctx, go }) {
-  if (!pbs) return <Panel title="Pipeline by Stage" icon={Target} accent={COLORS.emerald}><Empty><Locked /></Empty></Panel>;
+  if (!pbs) return <Panel title="Loan Portfolio" icon={Target} accent={COLORS.emerald}><Empty><Locked /></Empty></Panel>;
   const allTo = drillHref(pbs, ctx);
   return (
-    <Panel title="Pipeline by Stage" subtitle="Open opportunities · as of today · select a stage" icon={Target} accent={COLORS.emerald}
-      action={<ViewLink to={allTo}>View opportunities</ViewLink>}>
+    <Panel title="Loan Portfolio" subtitle="Active loans · principal outstanding · by days late · select a stage" icon={Target} accent={COLORS.emerald}
+      action={<ViewLink to={allTo}>View loans</ViewLink>}>
       <div className="flex items-center gap-4 flex-wrap">
         <Suspense fallback={<ChartFallback height={148} />}>
           <StageDonut stages={pbs.stages} total={pbs.total}
@@ -776,7 +777,7 @@ function PipelineByStage({ pbs, ctx, go }) {
           {pbs.stages.map((s, i) => (
             <li key={s.stage}>
               <DLink to={drillHref(s, ctx)} className="flex items-center justify-between gap-2 px-1.5 py-1 text-[12.5px]"
-                label={`${s.name}: ${s.count} open opportunities, ${inr(s.sum)}`}>
+                label={`${s.name}: ${s.count} loans, ${inr(s.sum)} outstanding`}>
                 <span className="flex items-center gap-2 min-w-0">
                   <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: stageColour(s, i) }} />
                   <span className="truncate" style={{ color: 'var(--color-ink)' }}>{s.name}</span>
@@ -785,11 +786,11 @@ function PipelineByStage({ pbs, ctx, go }) {
               </DLink>
             </li>
           ))}
-          {pbs.stages.length === 0 && <li className="text-[12px]" style={{ color: 'var(--color-muted)' }}>No open opportunities.</li>}
+          {pbs.stages.length === 0 && <li className="text-[12px]" style={{ color: 'var(--color-muted)' }}>No active loans.</li>}
         </ul>
       </div>
       <p className="text-[11px] mt-2" style={{ color: 'var(--color-faint)' }}>
-        <DLink to={allTo} className="hover:underline" label={`${pbs.total} open opportunities, ${inr(pbs.value)}`}>{pbs.total} open · {inr(pbs.value)}</DLink> · Won and Lost excluded
+        <DLink to={allTo} className="hover:underline" label={`${pbs.total} active loans, ${inr(pbs.value)} outstanding`}>{pbs.total} active · {inr(pbs.value)} outstanding</DLink>
       </p>
     </Panel>
   );
@@ -852,22 +853,20 @@ function Collections({ c, ctx }) {
   if (!c) return <Panel title="Collections" icon={Wallet} accent={COLORS.emerald}><Empty><Locked /></Empty></Panel>;
   const pct = c.collected_pct;
   return (
-    <Panel title="Collections" subtitle={`${c.period_label} · invoice basis`} icon={Receipt} accent={COLORS.emerald}
-      action={<ViewLink to={drillHref(c.invoiced, ctx)} />}>
-      {c.invoiced.count === 0 ? <Empty>No invoices raised yet.</Empty> : (
+    <Panel title="Collections" subtitle={`${c.period_label} · installments due`} icon={Receipt} accent={COLORS.emerald}
+      action={<ViewLink to={drillHref(c.demand, ctx)} />}>
+      {c.demand.count === 0 ? <Empty>No installments fell due in this period.</Empty> : (
         <>
           <div className="flex items-end justify-between gap-2">
             <div>
               <div className="text-[12px]" style={{ color: 'var(--color-muted)' }}>Collected</div>
-              {c.collected.locked ? <Locked /> : (
-                <DLink to={drillHref(c.collected, ctx)} className="dash-figure text-[24px] font-bold tabular-nums" label={`Collected ${inr(c.collected.sum)}`}>
-                  {inrShort(c.collected.sum)}
-                </DLink>
-              )}
+              <DLink to={drillHref(c.collected, ctx)} className="dash-figure text-[24px] font-bold tabular-nums" label={`Collected ${inr(c.collected.sum)}`}>
+                {inrShort(c.collected.sum)}
+              </DLink>
             </div>
             <div className="text-right">
               <div className="text-[11px] flex items-center gap-1 justify-end" style={{ color: 'var(--color-muted)' }}>
-                Collection % <Hint text="Collection % = Collected ÷ Total Invoiced, on the same invoices (Draft, Cancelled and Written Off excluded)." />
+                Collection % <Hint text="Collection % = payments collected in the period ÷ installments falling due in the same period. It can pass 100% when overdue amounts are recovered." />
               </div>
               <DLink to={drillHref(c.collected, ctx)} className="text-[20px] font-bold tabular-nums" style={{ color: 'var(--color-success-strong)' }}>
                 {pct === null ? '—' : `${pct}%`}
@@ -875,27 +874,27 @@ function Collections({ c, ctx }) {
             </div>
           </div>
           <div className="text-[12px] mt-1" style={{ color: 'var(--color-muted)' }}>
-            Total invoiced{' '}
-            <DLink to={drillHref(c.invoiced, ctx)} className="font-semibold" style={{ color: 'var(--color-ink)' }} label={`Total invoiced ${inr(c.invoiced.sum)}`}>
-              {inrShort(c.invoiced.sum)}
+            Total due{' '}
+            <DLink to={drillHref(c.demand, ctx)} className="font-semibold" style={{ color: 'var(--color-ink)' }} label={`Total due ${inr(c.demand.sum)}`}>
+              {inrShort(c.demand.sum)}
             </DLink>
             <span style={{ color: 'var(--color-faint)' }}> · </span>
-            <DLink to={drillHref(c.invoiced, ctx)} className="hover:underline" style={{ color: 'var(--color-faint)' }} label={`${c.invoiced.count} invoices`}>{c.invoiced.count} invoices</DLink>
+            <DLink to={drillHref(c.demand, ctx)} className="hover:underline" style={{ color: 'var(--color-faint)' }} label={`${c.demand.count} installments`}>{c.demand.count} installments</DLink>
           </div>
           <div className="h-[8px] rounded-full overflow-hidden mt-2.5" style={{ background: '#E6F4EE' }}>
             <div className="dash-bar-fill h-full rounded-full" style={{ width: grown ? `${Math.min(100, pct || 0)}%` : '0%', background: 'var(--color-success)' }} />
           </div>
           <div className="grid grid-cols-2 gap-2 mt-3">
             <DLink to={drillHref(c.outstanding, ctx)} className="rounded-[10px] p-2.5 flex items-center justify-between" style={{ background: 'var(--color-info-soft)' }}
-              label={`Outstanding ${inr(c.outstanding.sum)} across ${c.outstanding.count} invoices`}>
+              label={`Principal outstanding ${inr(c.outstanding.sum)} across ${c.outstanding.count} loans`}>
               <span>
-                <span className="block text-[11px]" style={{ color: 'var(--color-muted)' }}>Outstanding</span>
+                <span className="block text-[11px]" style={{ color: 'var(--color-muted)' }}>Principal outstanding</span>
                 <span className="block text-[16px] font-bold tabular-nums" style={{ color: 'var(--color-ink)' }}>{inrShort(c.outstanding.sum)}</span>
               </span>
               <ChevronRight className="w-4 h-4" style={{ color: 'var(--color-disabled)' }} />
             </DLink>
             <DLink to={drillHref(c.overdue, ctx)} className="rounded-[10px] p-2.5 flex items-center justify-between" style={{ background: 'var(--color-danger-soft)' }}
-              label={`Overdue ${inr(c.overdue.sum)} across ${c.overdue.count} invoices`}>
+              label={`Overdue ${inr(c.overdue.sum)} across ${c.overdue.count} installments`}>
               <span>
                 <span className="block text-[11px]" style={{ color: '#E11D48' }}>Overdue</span>
                 <span className="block text-[16px] font-bold tabular-nums" style={{ color: '#E11D48' }}>{inrShort(c.overdue.sum)}</span>
@@ -904,8 +903,8 @@ function Collections({ c, ctx }) {
             </DLink>
           </div>
           <div className="flex items-center justify-between gap-2 mt-2.5 flex-wrap">
-            <span className="text-[11px]" style={{ color: 'var(--color-faint)' }}>Overdue is included in outstanding.</span>
-            <ViewLink to={drillHref(c.overdue, ctx)}>View overdue payments</ViewLink>
+            <span className="text-[11px]" style={{ color: 'var(--color-faint)' }}>Overdue is the unpaid part of installments past their due date.</span>
+            <ViewLink to={drillHref(c.overdue, ctx)}>View overdue installments</ViewLink>
           </div>
         </>
       )}
@@ -919,7 +918,7 @@ function TopPerformers({ tp, ctx, reportTo }) {
   return (
     <Panel title="Top Performers" subtitle={`Ranked by ${tp.basis.toLowerCase()} · ${tp.period_label}`} icon={Medal} accent={COLORS.amber}
       action={<ViewLink to={reportTo} />}>
-      {tp.rows.length === 0 ? <Empty>No deals won in this period.</Empty> : (
+      {tp.rows.length === 0 ? <Empty>No payments collected in this period.</Empty> : (
         <ol className="flex flex-col gap-1">
           {tp.rows.map((r, i) => {
             const to = drillHref(r, ctx);
@@ -929,11 +928,11 @@ function TopPerformers({ tp, ctx, reportTo }) {
                 <span className="w-6 h-6 rounded-md text-[11px] font-bold flex items-center justify-center shrink-0 tabular-nums" style={{ background: bg, color: fg }}>{i + 1}</span>
                 <span className="w-7 h-7 rounded-full text-[10px] font-bold flex items-center justify-center shrink-0" style={{ background: COLORS.purple.soft, color: COLORS.purple.c }}>{initialsOf(r.name)}</span>
                 <DLink to={to} className="flex-1 min-w-0 truncate text-[12.5px] font-medium px-1" style={{ color: 'var(--color-ink)' }}
-                  label={`${r.name}: won opportunities`}>{r.name}</DLink>
+                  label={`${r.name}: payments collected`}>{r.name}</DLink>
                 <DLink to={to} className="text-[12.5px] font-bold tabular-nums px-1" style={{ color: 'var(--color-ink)' }}
-                  label={`${r.name}: ${inr(r.value)} won`}>{inrShort(r.value)}</DLink>
+                  label={`${r.name}: ${inr(r.value)} collected`}>{inrShort(r.value)}</DLink>
                 <DLink to={to} className="text-[11px] tabular-nums w-14 text-right px-1" style={{ color: 'var(--color-muted)' }}
-                  label={`${r.name}: ${r.won} deals won`}>{r.won} won</DLink>
+                  label={`${r.name}: ${r.payments} payments`}>{r.payments} payments</DLink>
               </li>
             );
           })}
@@ -1206,11 +1205,11 @@ export default function Dashboard() {
       <SectionLabel action={(
         <ViewAllMenu items={[
           { label: 'Leads', to: drillHref(k.total_leads, ctx), count: k.total_leads.count },
-          { label: 'Open opportunities', to: drillHref(k.open_opportunities, ctx), count: k.open_opportunities.count },
-          { label: 'Won this month', to: drillHref(k.won_this_month, ctx), count: k.won_this_month.count },
+          { label: 'Active loans', to: drillHref(k.active_loans, ctx), count: k.active_loans.count },
+          { label: 'Disbursed this month', to: drillHref(k.disbursed_this_month, ctx), count: k.disbursed_this_month.count },
           ...k.overdue_actions.parts.map((p) => ({ label: p.label, to: drillHref(p, ctx), count: p.count })),
         ]} />
-      )}>Pipeline at a glance</SectionLabel>
+      )}>Portfolio at a glance</SectionLabel>
       <KeyMetrics k={k} ctx={ctx} monthLabel={monthLabel} />
 
       <SectionLabel action={<ViewLink to="/calendar">Open today&apos;s calendar</ViewLink>}>Today&apos;s Activities</SectionLabel>
@@ -1228,10 +1227,9 @@ export default function Dashboard() {
             {Object.entries(data.periods).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           </select>
           <ViewAllMenu items={[
-            { label: 'Sales performance report', to: report('sales-rep-performance') },
-            { label: 'Won / lost analysis', to: report('won-lost-analysis') },
-            { label: 'Deals won', to: drillHref(data.performance.won, ctx), count: data.performance.won?.count },
-            { label: 'Deals lost', to: drillHref(data.performance.lost, ctx), count: data.performance.lost?.count },
+            { label: 'Loans disbursed', to: drillHref(data.performance.disbursed, ctx), count: data.performance.disbursed?.count },
+            { label: 'Payments collected', to: drillHref(data.performance.collected, ctx), count: data.performance.collected?.count },
+            { label: 'Installments due', to: drillHref(data.performance.demand, ctx), count: data.performance.demand?.count },
           ]} />
         </>
       )}>
@@ -1242,10 +1240,8 @@ export default function Dashboard() {
 
       <SectionLabel action={(
         <ViewAllMenu items={[
-          { label: 'Open opportunities', to: data.pipeline_by_stage && drillHref(data.pipeline_by_stage, ctx) },
-          { label: 'Pipeline by stage report', to: '/reports?report=pipeline-by-stage' },
+          { label: 'Active loans by days late', to: data.pipeline_by_stage && drillHref(data.pipeline_by_stage, ctx) },
           { label: 'Payments received (6 months)', to: data.collections_trend && drillHref(data.collections_trend, ctx) },
-          { label: 'Collections trend report', to: data.collections_trend && '/reports?report=invoice-collection-trend' },
           { label: 'Leads', to: data.leads_by_source && drillHref(data.leads_by_source, ctx) },
           { label: 'Lead source performance report', to: data.leads_by_source && '/reports?report=lead-source-performance' },
         ]} />
@@ -1258,16 +1254,15 @@ export default function Dashboard() {
 
       <SectionLabel action={(
         <ViewAllMenu items={[
-          { label: 'Invoices (collections basis)', to: data.collections && drillHref(data.collections.invoiced, ctx) },
-          { label: 'Collections status report', to: data.collections && '/reports?report=collections-status' },
-          { label: 'Sales performance report', to: data.top_performers && report('sales-rep-performance') },
+          { label: 'Installments due', to: data.collections && drillHref(data.collections.demand, ctx) },
+          { label: 'Overdue installments', to: data.collections && drillHref(data.collections.overdue, ctx) },
           { label: 'Open tickets', to: data.support && drillHref(data.support.open, ctx) },
           { label: 'Tickets by priority report', to: data.support && '/reports?report=tickets-by-priority' },
         ]} />
       )}>Money &amp; Workload</SectionLabel>
       <div className="grid lg:grid-cols-3 gap-3.5">
         <Collections c={data.collections} ctx={ctx} />
-        <TopPerformers tp={data.top_performers} ctx={ctx} reportTo={report('sales-rep-performance')} />
+        <TopPerformers tp={data.top_performers} ctx={ctx} reportTo={data.top_performers && drillHref({ metric: 'collected_period', path: '/loans/drill/collected_period', params: { period: ctx.period } }, ctx)} />
         <SupportLoad s={data.support} ctx={ctx} />
       </div>
 

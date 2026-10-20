@@ -19,7 +19,7 @@ const MODEL = { direct: 'Direct lending', arrangement: 'Third-party arrangement'
 const TONE = {
   Paid: 'bg-emerald-100 text-good', Active: 'bg-emerald-100 text-good', Posted: 'bg-emerald-100 text-good',
   Overdue: 'bg-red-50 text-warn', Delinquent: 'bg-red-50 text-warn', Reversed: 'bg-red-50 text-warn',
-  Partial: 'bg-amber-soft text-amber', Draft: 'bg-slate-100 text-slate-600', Upcoming: 'bg-sky-50 text-sky-700',
+  Partial: 'bg-amber-soft text-amber', Draft: 'bg-slate-100 text-slate-600', Closed: 'bg-slate-100 text-slate-600', Upcoming: 'bg-sky-50 text-sky-700',
 };
 const Pill = ({ s }) => <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TONE[s] || 'bg-slate-100 text-slate-600'}`}>{s}</span>;
 const ink = { color: 'var(--color-ink)' }, muted = { color: 'var(--color-muted)' };
@@ -38,75 +38,6 @@ function Kpi({ label, value, hint, to, tone }) {
   return to ? <Link to={to} className="card card-hover p-4 block">{body}</Link> : <div className="card p-4">{body}</div>;
 }
 
-/* ---------------------------------------------------------------- Dashboard */
-// Every figure links to /loans/drill/<figure>. The list there comes from the
-// same server query as the number, and says so, so the two can be checked.
-export function LoanDashboard() {
-  const { user } = useAuth();
-  const [d, setD] = useState(null), [err, setErr] = useState('');
-  useEffect(() => { api.loanDashboard().then(setD).catch((e) => setErr(e.message)); }, []);
-  if (err) return <div className="card p-6"><Err text={err} /></div>;
-  if (!d) return <Loading />;
-  const empty = !d.active_loans && !d.draft_loans;
-  const maxAge = Math.max(1, ...d.ageing.map((b) => b.amount_paise));
-  const drillTo = (m, q) => `/loans/drill/${m}${q ? '?' + q : ''}`;
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div><h1 className="text-xl font-bold" style={ink}>Loan dashboard</h1><p className="text-xs" style={muted}>As of {fdate(d.as_of)}. Click any figure to see the exact records behind it.</p></div>
-        {can(user, 'loans', 'create') && <Link to="/loans/new" className="btn btn-primary">New loan</Link>}
-      </div>
-      {empty ? (
-        <div className="card p-8 text-center"><p className="font-semibold" style={ink}>No loans yet</p><p className="text-sm mt-1" style={muted}>Create the first loan to see balances, overdue amounts and collections here.</p></div>
-      ) : (<>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Kpi label="Active loans" value={d.active_loans} to={drillTo('active_loans')} hint={d.draft_loans ? `${d.draft_loans} in draft` : undefined} />
-          <Kpi label="Principal outstanding" value={inr0(d.principal_outstanding_paise)} to={drillTo('outstanding')} />
-          <Kpi label="Overdue" value={inr0(d.overdue_paise)} to={drillTo('overdue')} tone={d.overdue_paise ? 'var(--color-danger)' : undefined} hint={`${d.overdue_loans} loan${d.overdue_loans === 1 ? '' : 's'}`} />
-          <Kpi label="Due today" value={inr0(d.due_today_paise)} to={drillTo('due_today')} />
-          <Kpi label="Due in next 7 days" value={inr0(d.due_next_7_days_paise)} to={drillTo('due_soon')} hint="Including today" />
-          <Kpi label="Collected this month" value={inr0(d.collected_this_month_paise)} to={drillTo('collected_month')} />
-          <Kpi label="Total disbursed" value={inr0(d.disbursed_paise)} to={drillTo('disbursed')} />
-          <Kpi label="Unallocated credit" value={inr0(d.unallocated_credit_paise)} to={drillTo('unallocated')} hint="Received but not yet applied" />
-          {d.lender_payable_paise !== undefined && <Kpi label="Payable to lenders" value={inr0(d.lender_payable_paise)} to={drillTo('lender_payable')} hint="Collected for lenders, not yet remitted" />}
-        </div>
-        {d.collections && (
-          <div className="card p-4 flex items-center gap-3 flex-wrap">
-            <span className="text-sm font-semibold" style={ink}>Collections</span>
-            {[['promise_due', 'Promises due'], ['missed_promise', 'Missed promises'], ['escalated', 'Escalated'], ['today', 'Due today']].map(([q, l]) => (
-              <Link key={q} to={`/loans/collections?queue=${q}`} className="btn btn-secondary"><b>{d.collections[q]}</b>&nbsp;{l}</Link>))}
-            <Link to="/loans/collections" className="text-xs underline ml-auto" style={muted}>Open the collections queue</Link>
-          </div>
-        )}
-        <div className="card p-4">
-          <div className="text-sm font-semibold mb-3" style={ink}>Overdue ageing <span className="font-normal text-xs" style={muted}>(days past the due date)</span></div>
-          <div className="space-y-2">{d.ageing.map((b) => (
-            <Link key={b.bucket} to={drillTo('overdue', 'bucket=' + b.bucket)} className="grid grid-cols-[110px_1fr_auto] items-center gap-3 text-sm rounded-lg px-2 py-1 hover:bg-slate-50">
-              <span style={muted}>{b.label}</span>
-              <span className="h-2.5 rounded-full bg-slate-100 overflow-hidden"><span className="block h-full rounded-full" style={{ width: `${(b.amount_paise / maxAge) * 100}%`, background: 'var(--color-danger)' }} /></span>
-              <span className="text-right tabular-nums" style={ink}>{inr0(b.amount_paise)} <span className="text-xs" style={muted}>· {b.installments}</span></span>
-            </Link>))}</div>
-          <p className="text-[11px] mt-2" style={muted}>Amounts are the unpaid part. The number after the dot is the count of installments.</p>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Most overdue loans</div>
-            <table className="sd-table w-full"><thead><tr><th>Loan</th><th>Borrower</th><th className="text-right">Overdue</th><th className="text-right">Oldest</th></tr></thead>
-              <tbody>{d.top_overdue.length === 0 && <tr><td colSpan={4} className="text-center py-4" style={muted}>Nothing is overdue.</td></tr>}
-                {d.top_overdue.map((x) => <tr key={x.loan_id}><td><Link className="underline" to={`/loans/${x.loan_id}`}>{x.loan_number}</Link></td><td>{x.borrower_name || '—'}</td><td className="text-right">{inr(x.overdue_paise)}</td><td className="text-right">{x.oldest_days} days</td></tr>)}</tbody></table></div>
-          <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Recent payments</div>
-            <table className="sd-table w-full"><thead><tr><th>Receipt</th><th>Loan</th><th>Date</th><th className="text-right">Amount</th></tr></thead>
-              <tbody>{d.recent_receipts.length === 0 && <tr><td colSpan={4} className="text-center py-4" style={muted}>No payments yet.</td></tr>}
-                {d.recent_receipts.map((r) => <tr key={r.id}><td>{r.receipt_number}</td><td><Link className="underline" to={`/loans/${r.loan_id}`}>{r.loan_number}</Link></td><td>{fdate(r.payment_date)}</td><td className="text-right">{inr(r.amount_paise)}</td></tr>)}</tbody></table></div>
-        </div>
-        {Object.keys(d.loans_by_model).length > 0 && (
-          <div className="card p-4"><div className="text-sm font-semibold mb-2" style={ink}>Active loans by business model</div>
-            <div className="flex gap-2 flex-wrap">{Object.entries(d.loans_by_model).map(([k, v]) => <Link key={k} to={drillTo('model', 'model=' + k)} className="btn btn-secondary"><b>{v}</b>&nbsp;{MODEL[k] || k}</Link>)}</div></div>
-        )}
-      </>)}
-    </div>
-  );
-}
-
 /* --------------------------------------------------------------------- Drill */
 const BUCKETS = [['', 'All overdue'], ['1-7', '1 to 7 days'], ['8-30', '8 to 30 days'], ['31-60', '31 to 60 days'], ['61-90', '61 to 90 days'], ['90plus', 'Over 90 days']];
 
@@ -115,17 +46,18 @@ export function LoanDrill() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
   const bucket = sp.get('bucket') || '', model = sp.get('model') || '';
+  const qs = [...sp.entries()].filter(([k]) => k !== 'drill').map(([k, v]) => `${k}=${v}`).join('&');
   const [d, setD] = useState(null), [err, setErr] = useState(''), [attempt, setAttempt] = useState(0), [offset, setOffset] = useState(0);
-  useEffect(() => { setOffset(0); }, [metric, bucket, model]);
+  useEffect(() => { setOffset(0); }, [metric, qs]);
   useEffect(() => {
     setD(null); setErr('');
-    api.loanDrill(metric, { bucket, model, limit: PAGE_SIZE, offset }).then(setD).catch((e) => setErr(e.message));
-  }, [metric, bucket, model, attempt, offset]);
+    api.loanDrill(metric, { ...Object.fromEntries([...new URLSearchParams(qs).entries()]), limit: PAGE_SIZE, offset }).then(setD).catch((e) => setErr(e.message));
+  }, [metric, qs, attempt, offset]);
   const open = (id) => nav(`/loans/${id}`);
   return (
     <div className="space-y-3">
       <div className="card p-4" style={{ borderLeft: '4px solid var(--color-brand)' }}>
-        <Link to="/loans" className="text-xs underline" style={muted}>← Back to dashboard</Link>
+        <Link to="/" className="text-xs underline" style={muted}>← Back to dashboard</Link>
         <h1 className="text-lg font-bold mt-1" style={ink}>{d ? d.title : 'Loading…'}</h1>
         {d && (<>
           <p className="text-sm mt-1" style={muted}>{d.why}</p>
@@ -140,14 +72,14 @@ export function LoanDrill() {
       {!err && !d && <Loading />}
       {d && d.rows.length === 0 && <div className="card p-8 text-center text-sm" style={muted}>Nothing here. The figure on the dashboard is zero too.</div>}
       {d && d.rows.length > 0 && d.kind === 'loans' && (
-        <div className="card overflow-x-auto"><table className="sd-table w-full"><thead><tr><th>Loan</th><th>Borrower</th><th>Model</th><th className="text-right">Disbursed</th><th className="text-right">Outstanding</th><th className="text-right">Overdue</th><th>Status</th></tr></thead>
+        <div className="card overflow-x-auto"><table className="sd-table w-full"><thead><tr><th>Loan</th><th>Borrower</th><th>Model</th><th className="text-right">Disbursed</th><th className="text-right">Outstanding</th><th className="text-right">Overdue</th>{d.rows[0].dpd !== undefined && <th className="text-right">Days late</th>}<th>Status</th></tr></thead>
           <tbody>{d.rows.map((l) => <tr key={l.id} className="cursor-pointer" onClick={() => open(l.id)}><td className="font-medium">{l.loan_number}</td><td>{l.borrower_name || '—'}</td><td>{MODEL[l.business_model]}</td>
-            <td className="text-right">{inr(l.disbursed_paise)}</td><td className="text-right">{inr(l.principal_outstanding_paise)}</td><td className="text-right" style={l.overdue_paise ? { color: 'var(--color-danger)' } : undefined}>{l.overdue_paise ? inr(l.overdue_paise) : '—'}</td><td><Pill s={l.status} /></td></tr>)}</tbody></table></div>
+            <td className="text-right">{inr(l.disbursed_paise)}</td><td className="text-right">{inr(l.principal_outstanding_paise)}</td><td className="text-right" style={l.overdue_paise ? { color: 'var(--color-danger)' } : undefined}>{l.overdue_paise ? inr(l.overdue_paise) : '—'}</td>{l.dpd !== undefined && <td className="text-right">{l.dpd || '—'}</td>}<td><Pill s={l.status} /></td></tr>)}</tbody></table></div>
       )}
       {d && d.rows.length > 0 && d.kind === 'installments' && (
-        <div className="card overflow-x-auto"><table className="sd-table w-full"><thead><tr><th>Loan</th><th>Borrower</th><th>Installment</th><th>Due</th><th className="text-right">Days overdue</th><th className="text-right">Unpaid</th></tr></thead>
+        <div className="card overflow-x-auto"><table className="sd-table w-full"><thead><tr><th>Loan</th><th>Borrower</th><th>Installment</th><th>Due</th><th className="text-right">Days overdue</th>{d.rows[0].paid_paise !== undefined && <th className="text-right">Paid</th>}<th className="text-right">{d.rows[0].paid_paise !== undefined ? 'Amount due' : 'Unpaid'}</th></tr></thead>
           <tbody>{d.rows.map((x) => <tr key={`${x.loan_id}-${x.seq}`} className="cursor-pointer" onClick={() => open(x.loan_id)}><td className="font-medium">{x.loan_number}</td><td>{x.borrower_name || '—'}</td><td>#{x.seq}</td><td>{fdate(x.due_date)}</td>
-            <td className="text-right" style={x.days_overdue ? { color: 'var(--color-danger)' } : undefined}>{x.days_overdue || '—'}</td><td className="text-right">{inr(x.amount_paise)}</td></tr>)}</tbody></table></div>
+            <td className="text-right" style={x.days_overdue ? { color: 'var(--color-danger)' } : undefined}>{x.days_overdue || '—'}</td>{x.paid_paise !== undefined && <td className="text-right">{inr(x.paid_paise)}</td>}<td className="text-right">{inr(x.amount_paise)}</td></tr>)}</tbody></table></div>
       )}
       {d && d.rows.length > 0 && d.kind === 'receipts' && <ReceiptRows rows={d.rows} onOpen={open} />}
       {d && d.count > PAGE_SIZE && <div className="card"><Pager total={d.count} offset={offset} onPage={setOffset} /></div>}
@@ -213,6 +145,7 @@ export function LoanList() {
         {chip('All', !status && !filter, () => setSp({}, { replace: true }))}
         {chip('Active', status === 'Active', () => setSp({ status: 'Active' }, { replace: true }))}
         {chip('Draft', status === 'Draft', () => setSp({ status: 'Draft' }, { replace: true }))}
+        {chip('Closed', status === 'Closed', () => setSp({ status: 'Closed' }, { replace: true }))}
         {chip('Overdue', filter === 'overdue', () => setSp({ filter: 'overdue' }, { replace: true }))}
         {chip('Due soon', filter === 'due_soon', () => setSp({ filter: 'due_soon' }, { replace: true }))}
         <input className="input max-w-xs" placeholder="Search loan number or borrower" value={q} onChange={(e) => set('q', e.target.value)} />
@@ -626,8 +559,8 @@ function DocsPanel({ collateralId, canAdd }) {
   );
 }
 
-export function CollateralManager({ loanId, canEdit, canCreate, showLoanPicker }) {
-  const [data, setData] = useState(null), [loans, setLoans] = useState([]), [err, setErr] = useState(''), [panel, setPanel] = useState(null), [onlyHigh, setOnlyHigh] = useState(false);
+export function CollateralManager({ loanId, canEdit, canCreate, showLoanPicker, initialHigh = false }) {
+  const [data, setData] = useState(null), [loans, setLoans] = useState([]), [err, setErr] = useState(''), [panel, setPanel] = useState(null), [onlyHigh, setOnlyHigh] = useState(initialHigh);
   const blank = { loan_id: loanId || '', collateral_type: COLLATERAL_TYPES[1], description: '', legal_owner: '', mortgage_holder: '', value: '', valuation_date: todayStr(), lien_status: 'Clear' };
   const [f, setF] = useState(blank), [adding, setAdding] = useState(false), [edit, setEdit] = useState({ value: '', valuation_date: todayStr(), lien_status: 'Clear', reason: '' }), [why, setWhy] = useState('');
   const load = useCallback(() => api.loanCollateral({ loan_id: loanId, high_ltv: onlyHigh ? 1 : undefined }).then((r) => { setData(r); setErr(''); }).catch((e) => setErr(e.message)), [loanId, onlyHigh]);
@@ -690,8 +623,9 @@ export function CollateralManager({ loanId, canEdit, canCreate, showLoanPicker }
 
 export function LoanCollateral() {
   const { user } = useAuth();
+  const [sp] = useSearchParams();
   return (<div className="space-y-3"><div><h1 className="text-xl font-bold" style={ink}>Collateral</h1><p className="text-xs" style={muted}>Security held against loans. Owner and mortgage holder are recorded separately.</p></div>
-    <CollateralManager showLoanPicker canEdit={can(user, 'loans', 'edit')} canCreate={can(user, 'loans', 'create')} /></div>);
+    <CollateralManager showLoanPicker initialHigh={sp.get('high_ltv') === '1'} canEdit={can(user, 'loans', 'edit')} canCreate={can(user, 'loans', 'create')} /></div>);
 }
 
 
@@ -812,6 +746,44 @@ export function LoanBorrowerDetail() {
         <div className="card overflow-x-auto"><div className="p-4 pb-2 text-sm font-semibold" style={ink}>Recent payments</div>
           <table className="sd-table w-full"><thead><tr><th>Receipt</th><th>Loan</th><th>Date</th><th>Method</th><th className="text-right">Amount</th><th>Status</th></tr></thead>
             <tbody>{rec.map((r) => <tr key={r.id}><td>{r.receipt_number}</td><td>{r.loan_number}</td><td>{fdate(r.payment_date)}</td><td>{r.method || '—'}</td><td className="text-right">{inr(r.amount_paise)}</td><td><Pill s={r.status} /></td></tr>)}</tbody></table></div>)}
+    </div>
+  );
+}
+
+
+/* -------------------------------------------------------------- Sample data */
+// For demos and for trying the screens. Runs the same scripts as `npm run seed-loans` in the background.
+export function LoanSampleData() {
+  const [st, setSt] = useState(null), [err, setErr] = useState('');
+  const load = useCallback(() => api.loanSampleStatus().then(setSt).catch((e) => setErr(e.message)), []);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (!st || !st.running) return undefined; const t = setInterval(load, 2000); return () => clearInterval(t); }, [st, load]);
+  const run = async (action, confirmText) => {
+    if (!window.confirm(confirmText)) return;
+    setErr('');
+    try { await api.loanSampleRun(action); await load(); } catch (e) { setErr(e.message); }
+  };
+  return (
+    <div className="space-y-3">
+      <div><h1 className="text-xl font-bold" style={ink}>Sample data</h1>
+        <p className="text-xs" style={muted}>Fill this system with made-up borrowers, loans, payments and follow-ups so you can try every screen, or take it out again. Use it on a demo or test system, not one that holds real loans.</p></div>
+      <Err text={err} />
+      {!st ? <Loading /> : (<>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <Kpi label="Loans in this system" value={st.total_loans} />
+          <Kpi label="Of which sample loans" value={st.sample_loans} />
+          <Kpi label="Status" value={st.running ? 'Working…' : 'Ready'} hint={st.running ? st.action_label : st.last ? st.last.message : undefined} />
+        </div>
+        <div className="card p-4 space-y-3">
+          <div className="flex gap-2 flex-wrap">
+            <button className="btn btn-primary" disabled={st.running || st.sample_loans > 0} onClick={() => run('add_small', 'Add 13 sample loans with borrowers, payments, collateral and lender settlements?')}>Add 13 sample loans</button>
+            <button className="btn btn-primary" disabled={st.running || st.sample_loans > 0} onClick={() => run('add_bulk', 'Add 1,000 sample loans? This takes about a minute and creates thousands of records.')}>Add 1,000 sample loans</button>
+            <button className="btn btn-danger" disabled={st.running || st.sample_loans === 0} onClick={() => run('remove', 'Remove all sample data? Real loans and customers are not touched.')}>Remove sample data</button>
+          </div>
+          <p className="text-xs" style={muted}>{st.sample_loans > 0 ? 'Sample data is in this system. Remove it before adding a different set.' : 'No sample data yet.'} Real loans are never changed or removed by this page.</p>
+        </div>
+        {st.log && st.log.length > 0 && <div className="card p-4"><div className="text-sm font-semibold mb-1" style={ink}>Progress</div><pre className="text-xs whitespace-pre-wrap" style={muted}>{st.log.join('\n')}</pre></div>}
+      </>)}
     </div>
   );
 }
