@@ -18,6 +18,7 @@ const FIELDS = [
   'logo_url', 'signature_url', 'signatory_name', 'stamp_url',
   'bank_name', 'bank_account_name', 'bank_account_number', 'bank_ifsc',
   'bank_branch', 'bank_swift', 'upi_id', 'default_terms', 'default_notes',
+  'tagline', 'doc_accent',
 ];
 
 // An image stored inline as a data URI rather than uploaded as a file: a logo

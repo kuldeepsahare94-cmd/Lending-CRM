@@ -19,12 +19,20 @@
 // One rule for what hangs under a record: whoever may open a record sees all
 // of its calls, notes, tasks, meetings, emails and files, whoever logged them.
 //
-// Everything here is a no-op for "all": where() returns nothing to add, and
-// allows() / canOpen() answer true without a query. So a CRM where nobody is
-// limited behaves, and performs, exactly as before.
+// BRANCHES (iCRM Institute): on top of the above, every module with a branch
+// shows only the records of the branches the person works in (or the one
+// branch picked at the top of the screen) — see services/branches.js.
+//   branch: 'own'     the record's branch_id must be one of theirs
+//   branch: 'shared'  a master record: empty branch_id = every branch
+//   branch: 'self'    the branches table itself (its id)
+// A head-office user with "All branches" picked is not limited by branch.
+//
+// Everything here is a no-op for "all" with no branch limit: where() returns
+// nothing to add, and allows() / canOpen() answer true without a query.
 // ============================================================================
 
 const db = require('../db');
+const branchAccess = require('./branches');
 
 const LEVELS = ['all', 'team', 'own'];
 
@@ -33,35 +41,39 @@ const LEVELS = ['all', 'team', 'own'];
 //   owners     columns holding a user id
 //   creator    the column holding who created it
 const MODULES = {
-  leads: { table: 'leads', ownerName: 'assigned_counselor', label: 'Leads' },
-  contacts: { table: 'contacts', owners: ['owner_id'], label: 'Contacts' },
-  accounts: { table: 'accounts', owners: ['owner_id'], label: 'Accounts' },
-  opportunities: { table: 'opportunities', owners: ['owner_id'], label: 'Opportunities' },
-  quotations: { table: 'quotations', owners: ['salesperson_id'], label: 'Quotations' },
-  proforma_invoices: { table: 'sales_documents', docType: 'proforma', owners: ['salesperson_id'], creator: 'created_by', label: 'Proforma Invoices' },
-  invoices: { table: 'sales_documents', docType: 'invoice', owners: ['salesperson_id'], creator: 'created_by', label: 'Invoices' },
-  subscriptions: { table: 'subscriptions', owners: ['owner_id'], label: 'Subscriptions' },
-  // A payment has no owner of its own: it belongs to whoever owns what it pays
-  // for — the subscription, else the invoice, else the deal, else the account.
-  payments: {
-    table: 'payments',
-    owners: [],
-    ownerExpr: (a) => `COALESCE((SELECT s9.owner_id FROM subscriptions s9 WHERE s9.id = ${a}subscription_id), `
-      + `(SELECT d9.salesperson_id FROM sales_documents d9 WHERE d9.id = ${a}document_id), `
-      + `(SELECT o9.owner_id FROM opportunities o9 WHERE o9.id = ${a}opportunity_id), `
-      + `(SELECT a9.owner_id FROM accounts a9 WHERE a9.id = ${a}account_id))`,
-    label: 'Payments',
-  },
-  // under: these hang under another record (a lead's calls, an account's notes)
-  tasks: { table: 'tasks', owners: ['assigned_to_id'], creator: 'created_by', under: true, label: 'Tasks' },
-  calls: { table: 'calls', owners: ['assigned_user_id'], creator: 'created_by', under: true, label: 'Calls' },
-  meetings: { table: 'meetings', owners: ['assigned_user_id', 'organizer_id'], creator: 'created_by', under: true, label: 'Meetings' },
-  notes: { table: 'notes', owners: [], creator: 'created_by', under: true, label: 'Notes' },
-  emails: { table: 'emails', owners: [], creator: 'created_by', under: true, label: 'Emails' },
-  documents: { table: 'documents', owners: [], creator: 'uploaded_by', under: true, label: 'Documents' },
+  leads: { table: 'leads', ownerName: 'assigned_counselor', branch: 'own', label: 'Enquiries' },
+  // the institute's own modules
+  branches: { table: 'branches', owners: ['manager_id'], creator: 'created_by', branch: 'self', label: 'Branches' },
+  academic_years: { table: 'academic_years', owners: [], creator: 'created_by', branch: 'shared', label: 'Academic Years' },
+  programs: { table: 'programs', owners: [], creator: 'created_by', branch: 'shared', label: 'Courses (top level)' },
+  courses: { table: 'courses', owners: [], creator: 'created_by', branch: 'shared', label: 'Courses' },
+  subjects: { table: 'subjects', owners: [], creator: 'created_by', branch: 'shared', label: 'Subjects' },
+  batches: { table: 'batches', owners: ['class_teacher_id'], creator: 'created_by', branch: 'own', label: 'Batches' },
+  students: { table: 'students', owners: ['counsellor_id'], creator: 'created_by', branch: 'own', label: 'Students' },
+  fee_types: { table: 'fee_types', owners: [], creator: 'created_by', branch: 'shared', label: 'Fee Types' },
+  student_attendance: { table: 'student_attendance', owners: ['marked_by'], creator: 'marked_by', branch: 'own', label: 'Student Attendance' },
+  staff_attendance: { table: 'staff_attendance', owners: ['user_id'], creator: 'marked_by', branch: 'own', label: 'Staff Attendance' },
+  holidays: { table: 'holidays', owners: [], creator: 'created_by', branch: 'shared', label: 'Holidays' },
+  biometric_devices: { table: 'biometric_devices', owners: [], creator: 'created_by', branch: 'own', label: 'Biometric Devices' },
+  account_groups: { table: 'account_groups', owners: [], creator: 'created_by', branch: 'shared', label: 'Account Groups' },
+  ledgers: { table: 'ledgers', owners: [], creator: 'created_by', branch: 'shared', label: 'Ledgers' },
+  vouchers: { table: 'vouchers', owners: [], creator: 'created_by', branch: 'own', label: 'Vouchers' },
+  expenses: { table: 'expenses', owners: [], creator: 'created_by', branch: 'own', label: 'Expenses' },
+  salary_structures: { table: 'salary_structures', owners: [], creator: 'created_by', branch: 'own', label: 'Salary Structures' },
+  payroll_runs: { table: 'payroll_runs', owners: [], creator: 'created_by', branch: 'own', label: 'Payroll' },
+  staff_advances: { table: 'staff_advances', owners: [], creator: 'created_by', branch: 'own', label: 'Staff Advances' },
+  fee_installments: { table: 'fee_installments', owners: [], creator: 'created_by', branch: 'own', label: 'Fee Dues' },
+  fee_receipts: { table: 'fee_receipts', owners: ['collected_by'], creator: 'created_by', branch: 'own', label: 'Receipts' },
+  // under: these hang under another record (an enquiry's calls, notes…)
+  tasks: { table: 'tasks', owners: ['assigned_to_id'], creator: 'created_by', under: true, branch: 'own', label: 'Tasks' },
+  calls: { table: 'calls', owners: ['assigned_user_id'], creator: 'created_by', under: true, branch: 'own', label: 'Calls' },
+  meetings: { table: 'meetings', owners: ['assigned_user_id', 'organizer_id'], creator: 'created_by', under: true, branch: 'own', label: 'Meetings' },
+  notes: { table: 'notes', owners: [], creator: 'created_by', under: true, branch: 'own', label: 'Notes' },
+  emails: { table: 'emails', owners: [], creator: 'created_by', under: true, branch: 'own', label: 'Emails' },
+  documents: { table: 'documents', owners: [], creator: 'uploaded_by', under: true, branch: 'own', label: 'Documents' },
 };
 // A module made in Settings → Modules, with no table of its own.
-const CUSTOM = { table: 'custom_module_records', owners: ['owner_id'], creator: 'created_by', custom: true };
+const CUSTOM = { table: 'custom_module_records', owners: ['owner_id'], creator: 'created_by', custom: true, branch: 'own' };
 
 // ---------------------------------------------------------------------------
 // Schema (added on first use; nothing to run by hand)
@@ -146,7 +158,42 @@ function level(user, moduleApi) {
   const s = p && p.scope;
   return LEVELS.includes(s) ? s : 'all';
 }
-const restricted = (user, moduleApi) => level(user, moduleApi) !== 'all';
+// limited by owner (Can see = own / team)
+const ownerRestricted = (user, moduleApi) => level(user, moduleApi) !== 'all';
+
+// limited by branch: the branch ids this user sees in a module, or null (every branch)
+function branchIds(user, moduleApi) {
+  if (!user) return null;
+  const cfg = configOf(moduleApi);
+  if (!cfg || !cfg.branch) return null;
+  return branchAccess.filterOf(user);
+}
+const branchLimited = (user, moduleApi) => branchIds(user, moduleApi) !== null;
+const restricted = (user, moduleApi) => ownerRestricted(user, moduleApi) || branchLimited(user, moduleApi);
+
+// The branch part of a WHERE (null = nothing to add).
+function branchWhere(user, moduleApi, a) {
+  const ids = branchIds(user, moduleApi);
+  if (ids === null) return null;
+  const cfg = configOf(moduleApi);
+  const list = ids.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (!list.length) return { sql: '1 = 0', params: [] };
+  const marks = list.map(() => '?').join(',');
+  if (cfg.branch === 'self') return { sql: `${a}id IN (${marks})`, params: list };
+  if (cfg.branch === 'shared') return { sql: `(${a}branch_id IS NULL OR ${a}branch_id IN (${marks}))`, params: list };
+  return { sql: `${a}branch_id IN (${marks})`, params: list };
+}
+// The same test on a record in hand.
+function branchAllows(user, moduleApi, record) {
+  const ids = branchIds(user, moduleApi);
+  if (ids === null || !record) return true;
+  const cfg = configOf(moduleApi);
+  const set = new Set(ids.map(Number));
+  if (cfg.branch === 'self') return set.has(Number(record.id));
+  if (!('branch_id' in record)) return true;
+  if (record.branch_id === null || record.branch_id === undefined || record.branch_id === '') return cfg.branch === 'shared';
+  return set.has(Number(record.branch_id));
+}
 
 // ---------------------------------------------------------------------------
 // The people below someone
@@ -252,9 +299,9 @@ function seesUnassigned(user, moduleApi) {
 // The modules this user is limited in that other records can hang under.
 function limitedParents(user) {
   const out = [];
-  for (const key of Object.keys(MODULES)) if (!MODULES[key].under && restricted(user, key)) out.push(key);
+  for (const key of Object.keys(MODULES)) if (!MODULES[key].under && ownerRestricted(user, key)) out.push(key);
   for (const key of Object.keys((user && user.permissions) || {})) {
-    if (!MODULES[key] && restricted(user, key)) out.push(key);      // modules made in Settings
+    if (!MODULES[key] && ownerRestricted(user, key)) out.push(key);      // modules made in Settings
   }
   return out;
 }
@@ -293,6 +340,15 @@ function ownParts(user, moduleApi, a, ids, params) {
 // → { sql: '' | ' AND (…)', params: [] }.  alias = the table's alias in the
 // query ('' when the query has none).
 function where(user, moduleApi, alias = '') {
+  const a0 = alias ? `${alias}.` : '';
+  const own = ownerWhere(user, moduleApi, alias);
+  const bw = branchWhere(user, moduleApi, a0);
+  if (!bw) return own;
+  return { sql: `${own.sql} AND ${bw.sql}`, params: [...own.params, ...bw.params] };
+}
+
+// The owner part (Can see = own / team).
+function ownerWhere(user, moduleApi, alias = '') {
   const ids = userIds(user, moduleApi);
   if (ids === null) return { sql: '', params: [] };
   const cfg = configOf(moduleApi);
@@ -321,6 +377,7 @@ function where(user, moduleApi, alias = '') {
 // ---------------------------------------------------------------------------
 // The same test on a record already in hand.
 function allows(user, moduleApi, record) {
+  if (!branchAllows(user, moduleApi, record)) return false;
   const ids = userIds(user, moduleApi);
   if (ids === null || !record) return true;
   const cfg = configOf(moduleApi);
@@ -373,12 +430,12 @@ function canOpen(user, moduleApi, id) {
 }
 
 const SINGULAR = {
-  leads: 'lead', contacts: 'contact', accounts: 'account', opportunities: 'opportunity', quotations: 'quotation',
-  proforma_invoices: 'proforma invoice', invoices: 'invoice', subscriptions: 'subscription', tasks: 'task', calls: 'call',
-  meetings: 'meeting', notes: 'note', emails: 'email', documents: 'document', payments: 'payment',
+  leads: 'enquiry', branches: 'branch', academic_years: 'academic year', programs: 'course', courses: 'class', subjects: 'subject', batches: 'batch', students: 'student', fee_types: 'fee type', fee_installments: 'fee due', fee_receipts: 'receipt', student_attendance: 'attendance record', staff_attendance: 'attendance record', holidays: 'holiday', biometric_devices: 'device', account_groups: 'account group', ledgers: 'ledger', vouchers: 'voucher', expenses: 'expense', salary_structures: 'salary structure', payroll_runs: 'payroll', staff_advances: 'advance',
+  tasks: 'task', calls: 'call', meetings: 'meeting', notes: 'note', emails: 'email', documents: 'document',
 };
 function denial(user, moduleApi) {
   const one = SINGULAR[moduleApi] || 'record';
+  if (!ownerRestricted(user, moduleApi)) return { error: moduleApi === 'branches' ? 'This branch is not one of yours.' : `This ${one} belongs to another branch.`, code: 'OTHER_BRANCH' };
   const whose = level(user, moduleApi) === 'own' ? 'its own records' : "its own and its team's records";
   return { error: `This ${one} belongs to someone else. Your role sees only ${whose} here.`, code: 'NOT_YOURS' };
 }
@@ -411,9 +468,7 @@ function parentVisible(user, relatedModule, relatedId) {
 //   existing   the record as it is now (an edit): a link that is not being
 //              changed is left alone — it may have been set by a manager.
 const LINKS = {
-  account_id: 'accounts', contact_id: 'contacts', primary_contact_id: 'contacts', opportunity_id: 'opportunities',
-  quotation_id: 'quotations', subscription_id: 'subscriptions', parent_subscription_id: 'subscriptions',
-  document_id: 'invoices', source_document_id: 'invoices', parent_account_id: 'accounts',
+  course_id: 'courses', program_id: 'programs', interested_program_id: 'programs', academic_year_id: 'academic_years', batch_id: 'batches', interested_course_id: 'courses', student_id: 'students',
 };
 function linkDenied(user, body, existing = null) {
   if (!body || !anyRestricted(user)) return null;
@@ -433,6 +488,10 @@ function linkDenied(user, body, existing = null) {
 // may open, everything under that record is shown — whoever logged it.
 // Otherwise: their own, plus what hangs under their records.
 function whereActivity(user, moduleApi, alias, relatedModule, relatedId) {
+  // (v1.13) the notes, files, calls… OF a record follow that record: someone who may not
+  // open the record does not get its activities either (before, a role that saw all notes
+  // could read the notes of an account it is not allowed to open)
+  if (relatedModule && relatedId && configOf(relatedModule) && !canOpen(user, relatedModule, relatedId)) return { sql: ' AND 1 = 0', params: [] };
   if (!restricted(user, moduleApi)) return { sql: '', params: [] };
   if (relatedModule && relatedId && configOf(relatedModule) && canOpen(user, relatedModule, relatedId)) return { sql: '', params: [] };
   return where(user, moduleApi, alias);
@@ -445,9 +504,17 @@ const allowsActivity = (user, moduleApi, record) => allows(user, moduleApi, reco
 // ---------------------------------------------------------------------------
 // Someone who only sees their own records must not lose sight of what they
 // just created: with no owner given, they become the owner.
+// (v1.13) A record added by a salesperson (anyone who cannot change Settings)
+// is theirs even when their role sees every record — before, it was left
+// without an owner, so it was missing from "Mine", from per-person reports
+// and from the follow-up lists. An administrator adding records keeps the
+// choice: what they leave without an owner stays without one.
+const managesSettings = (user) => isSuper(user) || !!(user && user.permissions && user.permissions.settings && user.permissions.settings.edit);
 function ownerDefault(user, moduleApi, body) {
-  if (!restricted(user, moduleApi) || !body) return body;
+  if (!body || !user || !user.id) return body;
+  if (!ownerRestricted(user, moduleApi) && managesSettings(user)) return body;
   const cfg = configOf(moduleApi);
+  if (!cfg) return body;
   if (cfg.ownerName) {
     if (!String(body[cfg.ownerName] || '').trim()) body[cfg.ownerName] = displayName(user);
   } else if (cfg.owners.length) {
@@ -479,13 +546,15 @@ function visibleIds(user, moduleApi) {
 
 // Is this user limited anywhere at all?
 function anyRestricted(user) {
-  if (!user || isSuper(user)) return false;
+  if (!user) return false;
+  if (branchAccess.filterOf(user) !== null) return true;
+  if (isSuper(user)) return false;
   const p = user.permissions || {};
   return Object.keys(p).some((m) => p[m] && (p[m].scope === 'team' || p[m].scope === 'own') && configOf(m));
 }
 // What a cached answer depends on: nothing for people who see everything,
-// the person for those who do not.
-const cacheKey = (user) => (anyRestricted(user) ? `u${user.id}` : '');
+// the person (and the branch they are looking at) for those who do not.
+const cacheKey = (user) => (anyRestricted(user) ? `u${user.id}:b${(branchAccess.filterOf(user) || ['all']).join('.')}` : '');
 
 const literal = (v) => (typeof v === 'number' ? String(v) : `'${String(v).replace(/'/g, "''")}'`);
 // where() with its values written into the SQL (they are user ids, module
@@ -501,19 +570,17 @@ function inlineWhere(user, moduleApi, alias) {
 function tableFilters(user) {
   const out = new Map();
   if (!anyRestricted(user)) return out;
-  const docs = [];
   for (const [module, cfg] of Object.entries(MODULES)) {
     const cond = inlineWhere(user, module, 'x9');
     if (!cond) continue;
-    if (cfg.docType) docs.push(`(x9.doc_type <> '${cfg.docType}' OR ${cond})`);
-    else out.set(cfg.table, cond);
+    out.set(cfg.table, cond);
   }
-  if (docs.length) out.set('sales_documents', docs.join(' AND '));
   const custom = [];
   for (const key of Object.keys(user.permissions || {})) {
     if (MODULES[key] || !restricted(user, key)) continue;
     const cfg = configOf(key);
-    if (cfg && cfg.custom) custom.push(`(x9.module_id <> ${Number(cfg.moduleId)} OR ${inlineWhere(user, key, 'x9')})`);
+    const cond = cfg && cfg.custom ? inlineWhere(user, key, 'x9') : '';
+    if (cond) custom.push(`(x9.module_id <> ${Number(cfg.moduleId)} OR ${cond})`);
   }
   if (custom.length) out.set('custom_module_records', custom.join(' AND '));
   return out;
@@ -585,7 +652,7 @@ function describeModules() {
 ensureSchema();
 
 module.exports = {
-  LEVELS, MODULES, ensureSchema, settings, saveSettings, configOf, level, restricted, isSuper,
+  LEVELS, MODULES, ensureSchema, settings, saveSettings, configOf, level, restricted, ownerRestricted, branchLimited, branchIds, branchWhere, branchAllows, isSuper,
   teamOf, userIds, namesOf, displayName, userIdByName, seesUnassigned, where, allows, canOpen, denial, param,
   parentVisible, whereActivity, allowsActivity, ownerDefault, visibleIds, describeModules,
   anyRestricted, cacheKey, inlineWhere, tableFilters, scopeSql, scopedDb, visibleUsers, limitedParents,

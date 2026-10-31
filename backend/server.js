@@ -4,16 +4,12 @@ const compression = require('compression');
 require('dotenv').config();
 const { requireAuth } = require('./middleware/auth');
 
-// ---- Universal CRM metadata layer (Phases 1–8) — must load before any
-// route below that touches modules/fields/accounts/contacts/opportunities/
-// quotations/products/subscriptions/tickets, since these files create the
-// tables and seed data those routes depend on. ----
+// ---- The metadata layer and the schema phases — must load before any
+// route below, since these files create the tables and seed data the routes
+// depend on. Each phase is idempotent (it checks before it changes). ----
 require('./db-metadata');
-require('./db-phase2');
-require('./db-phase3-fields');
 require('./db-phase12-activities');
 require('./db-phase16-workflows');
-require('./db-phase21-generalize');
 require('./db-phase24-teams-docs');
 require('./db-phase26-taxes-currencies');
 require('./db-phase27-call-disposition');
@@ -21,7 +17,6 @@ require('./db-phase28-email-accounts');
 require('./db-phase29-inbound-email');
 require('./db-phase30-email-campaigns');
 require('./db-phase31-email-diagnostics');
-require('./db-phase32-quotation-discount');
 require('./db-phase33-wa-quick-templates');
 require('./db-phase34-lead-company');
 require('./db-phase35-chat');
@@ -29,22 +24,29 @@ require('./db-phase36-reports');
 require('./db-phase37-calendar');
 require('./db-phase38-numbering');
 require('./db-phase39-documents');
-require('./db-phase40-template-library');
 require('./db-phase41-online-meetings');
 require('./db-phase42-security-access');
 require('./db-phase43-permission-completeness');
-require('./db-phase44-subscriptions-amc');
 require('./db-phase45-list-tools');
-require('./db-phase46-support-desk');
 require('./db-phase47-filter-layouts');
 require('./db-phase48-option-management');
 require('./db-phase49-follow-ups');
-require('./db-phase50-settings-cleanup');
 require('./db-phase51-geo');
-require('./db-phase52-lending-industry');
-require('./db-phase53-loans');
-require('./db-phase54-loan-collections');
-require('./db-phase55-loan-settlements-collateral');
+require('./db-phase53-polish');
+require('./db-phase54-multi-email');
+require('./db-phase55-filter-fields');   // (v1.11) filter fields per module, web and app
+require('./db-phase56-message-templates'); // (v1.12) WhatsApp and email templates with files
+require('./db-phase57-list-view'); // (v1.13) the List view setting: its own column order; Leads and Payments follow it
+require('./db-phase58-grow-options'); // (v1.13) dropdown lists get the values records already hold (Industry…), once
+require('./db-phase60-institute'); // iCRM Institute 1A: branches, institute type, academic setup
+require('./db-phase61-students'); // iCRM Institute 1B: students, admissions, batch history
+require('./db-phase62-fees'); // iCRM Institute 1C: fees, EMIs, receipts, online payment
+require('./db-phase63-attendance'); // iCRM Institute 2: attendance, holidays, biometric machines
+require('./db-phase64-accounts');   // iCRM Institute 3A: accounts (groups, ledgers, vouchers, expenses)
+require('./db-phase65-payroll');    // iCRM Institute 3B: payroll (salary structures, runs, payslips, advances)
+require('./db-phase66-attendance2'); // attendance update: students in more than one batch, staff check-in from the app
+require('./db-phase67-academics');  // iCRM Institute: Course -> Class -> Subject (with subject fees)
+require('./db-phase68-documents');  // iCRM Institute: branch letterheads, document colour, student certificates
 
 
 const app = express();
@@ -90,17 +92,23 @@ app.use(cors({
 // before the global JSON parser below. Route handlers respond directly and
 // never call next(), so express.json() never touches these requests.
 app.use('/api/whatsapp/webhook', express.raw({ type: '*/*', limit: '2mb' }), require('./routes/whatsappWebhook'));
+// Razorpay: a payment link was paid (public; the signature is checked on the raw body)
+app.post('/api/fees/razorpay/webhook', express.raw({ type: '*/*', limit: '1mb' }), require('./routes/fees').webhook);
+// Attendance machines (no sign-in; each is known by its serial number or its private key):
+//   ZKTeco / eSSL / Identix (ADMS)  /iclock/*      Matrix COSEC  /login /poll /setevent… (also /cosec/*)
+//   Hikvision  /biometric/hik/<key>              any other     /biometric/push/<key>
+app.use('/iclock', require('./routes/iclock'));
+{
+  const bio = require('./routes/biometricPush');
+  app.use('/cosec', bio.matrix);
+  app.use('/', bio.matrix);
+  app.use('/biometric', bio.pushed);
+}
 
 // Facebook/Instagram Lead Ads webhook — same reasoning as the WhatsApp one:
 // public, needs the raw body for Meta's HMAC signature check, must be
 // registered before the global JSON parser.
 app.use('/api/social-leads', express.raw({ type: '*/*', limit: '1mb' }), require('./routes/leadSourcesSocial'));
-
-// MCube IVR — the two links MCube calls when a call rings and when it ends.
-// Public (MCube cannot sign in; the long random key in the link lets a message
-// in) and read raw, because MCube sends JSON on some accounts and form fields
-// on others. (`type: () => true`: also a message that names no content type.)
-app.use('/api/telephony/hook', express.raw({ type: () => true, limit: '1mb' }), require('./routes/telephony').hooks);
 
 // A CSV import carries the whole file in the request. The normal 100 KB limit
 // refused any file beyond roughly a thousand rows ("request entity too
@@ -108,13 +116,8 @@ app.use('/api/telephony/hook', express.raw({ type: () => true, limit: '1mb' }), 
 app.use('/api/admin/import', express.json({ limit: '30mb' }));
 app.use('/api/admin/import-analyze', express.json({ limit: '30mb' }));
 
-// RazorpayX reports bank transfers of expense claims here (signed, no sign-in;
-// it needs the body exactly as sent, so it is read raw, before express.json).
-app.use('/api/expenses-webhook/razorpayx', express.raw({ type: () => true, limit: '1mb' }), require('./routes/expenses').razorpayxWebhook);
-
-// Field force (SFA): punch in/out, the route, visits with photos — the mobile
-// app sends selfies and photos inside the request, so a bigger body is read
-// (after the sign-in is checked).
+// The staff app (Android): a call recording travels inside the request, so a
+// bigger body is read (after the sign-in is checked).
 {
   const readSfaBody = express.json({ limit: '30mb' });   // (a call recording can be 20 MB)
   app.use('/api/sfa', requireAuth, (req, res, next) => readSfaBody(req, res, (err) => {
@@ -133,42 +136,29 @@ app.get('/api/geo', (req, res) => {
 });
 // a call recording: the link carries its own secret (an <audio> player cannot send the sign-in)
 app.get('/api/call-recordings/:file', require('./routes/sfa').serveRecording);
-
-// Expense management — field expenses with bill photos, claims, approvals,
-// advances and payment (also what the mobile app talks to). A bill photo
-// travels inside the request, so these routes read a bigger body than the
-// rest; the sign-in is checked first, so nobody without a login can send one.
-{
-  const readExpenseBody = express.json({ limit: '30mb' });
-  app.use('/api/expenses', requireAuth, (req, res, next) => readExpenseBody(req, res, (err) => {
-    if (!err) return next();
-    const tooBig = err.status === 413 || err.type === 'entity.too.large';
-    return res.status(tooBig ? 413 : 400).json({ error: tooBig ? 'The bills are too large to send together. Add them one at a time.' : 'The request could not be read.' });
-  }), require('./routes/expenses'));
-}
-
-// Visiting cards: the photo of a card (front and back) travels inside the request.
-{
-  const readCardBody = express.json({ limit: '16mb' });
-  app.use('/api/cards', requireAuth, (req, res, next) => readCardBody(req, res, (err) => {
-    if (!err) return next();
-    const tooBig = err.status === 413 || err.type === 'entity.too.large';
-    return res.status(tooBig ? 413 : 400).json({ error: tooBig ? 'The card photo is too large. Take it again.' : 'The request could not be read.' });
-  }), require('./routes/cards'));
-}
+// (v1.4) a record's file or a chat file opened from the app: the signed link is the permission
+app.get('/api/m-file/:kind/:id', (req, res) => require('./services/sfa/mfiles').serve(req, res));
+app.get('/api/payslip-file/:id', (req, res) => require('./routes/payroll').publicFile(req, res));   // (Phase 3B) staff app: own payslip, signed link
 
 // Addresses as you type and from "Use my location" (v1.3.2)
 app.use('/api/address', requireAuth, require('./routes/address'));
 
+// a student's photo travels inside the request (up to 2 MB, as base64)
+{
+  const readPhoto = express.json({ limit: '4mb' });
+  app.use('/api/students', (req, res, next) => (req.method === 'PUT' && /^\/\d+\/photo$/.test(req.path) ? readPhoto(req, res, next) : next()));
+}
+// a machine's punch file (Settings → Attendance → Import file) can be a few MB
+app.use('/api/attendance/devices', express.json({ limit: '6mb' }));
 app.use(express.json());
 
 // Public routes
-// Product photos — signed addresses, see routes/productImages.js.
-app.use('/api/product-images', require('./routes/productImages'));
 app.use('/api/auth', require('./routes/auth'));
 // The workflows' keep-awake link: no sign-in, the long key in the address is
 // the secret (Settings → Workflows → Settings shows it).
 app.use('/api/workflow-tick', require('./routes/workflows').tick);
+// (v1.12) a template file's public link (WhatsApp messages carry it; the long token is the secret)
+app.use('/api/f', require('./routes/publicFiles'));
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 // Speed check: how long one trip from this server to the database takes.
 // Open /api/health/db in a browser. Well under 5 ms means the server and the
@@ -205,8 +195,11 @@ app.get('/api/health/db', (req, res) => {
 // be created with every required field blank.
 const { enforceRequiredFields } = require('./middleware/requiredFields');
 app.use('/api', enforceRequiredFields);
+// (v1.8) more than one email address on a record: the list rides along with the record's own save
+app.use('/api', require('./middleware/extraEmails').extraEmails);
 
 // Everything below requires a valid, active login
+app.use('/api/record-emails', requireAuth, require('./routes/recordEmails'));
 app.use('/api/leads', requireAuth, require('./routes/leads'));
 app.use('/api/dashboard', requireAuth, require('./routes/dashboard'));
 app.use('/api/reports', requireAuth, require('./routes/reports'));
@@ -253,17 +246,34 @@ app.use('/api/modules', requireAuth, require('./routes/fields'));
 app.use('/api/modules', requireAuth, require('./routes/layouts'));
 app.use('/api/relationships', requireAuth, require('./routes/relationships'));
 app.use('/api/records', requireAuth, require('./routes/customRecords'));
-// Core modules with their own real tables + dedicated routes.
-app.use('/api/accounts', requireAuth, require('./routes/accounts'));
-app.use('/api/contacts', requireAuth, require('./routes/contacts'));
+// iCRM Institute — branches, academic setup (one router for each module, see routes/instituteRecords.js)
+{
+  const inst = require('./routes/instituteRecords');
+  app.use('/api/courses', requireAuth, inst.courseSubjects());
+  // students: admission from an enquiry, history, transfer, photo, ID cards (before the list/record router)
+  const stu = require('./routes/students');
+  app.use('/api/leads', requireAuth, stu.leads);
+  app.use('/api/students', requireAuth, stu.students);
+  // fees: a student's fees, payments, receipts, dues, payment links, settings
+  const feeRoutes = require('./routes/fees');
+  app.use('/api/students', requireAuth, feeRoutes.students);
+  app.use('/api/fee-plans', requireAuth, feeRoutes.plans);
+  app.use('/api/fee-receipts', requireAuth, feeRoutes.receipts);
+  app.use('/api/fee-installments', requireAuth, feeRoutes.dues);
+  app.use('/api/fees', requireAuth, feeRoutes.general);
+  app.use('/api/attendance', requireAuth, require('./routes/attendance'));
+  app.use('/api/accounts', requireAuth, require('./routes/accounts'));
+  app.use('/api/payroll', requireAuth, require('./routes/payroll'));
+  // (Phase 68) certificates and the branch letterhead
+  const docs = require('./routes/instituteDocuments');
+  app.use('/api/students', requireAuth, docs.students);
+  app.use('/api/certificates', requireAuth, docs.certificates);
+  app.use('/api/branches', requireAuth, docs.branches);
+  for (const api of Object.keys(require('./services/instituteModules').MODULES)) app.use(`/api/${api}`, requireAuth, inst.tableRecords(api));
+  app.use('/api/institute', requireAuth, require('./routes/institute'));
+}
 app.use('/api/document-numbering', requireAuth, require('./routes/documentNumbering'));
-// Invoices (commission and servicing-fee invoices). Built by the shared document router.
-const documentRouter = require('./routes/documents.factory');
-app.use('/api/invoices', requireAuth, documentRouter({ docType: 'invoice', permission: 'invoices' }));
-app.use('/api/document-templates', requireAuth, require('./routes/documentTemplates'));
 app.use('/api/company-profile', requireAuth, require('./routes/companyProfile'));
-app.use('/api/tickets', requireAuth, require('./routes/tickets'));
-app.use('/api/telephony', requireAuth, require('./routes/telephony'));
 app.use('/api/calls', requireAuth, require('./routes/callDisposition'));
 app.use('/api/calls', requireAuth, require('./routes/calls'));
 app.use('/api/meetings', requireAuth, require('./routes/meetings'));
@@ -276,31 +286,19 @@ app.use('/api/search', requireAuth, require('./routes/search'));
 // the duplicates already in the CRM, and merging them.
 app.use('/api/duplicates', requireAuth, require('./routes/duplicates'));
 app.use('/api/workflows', requireAuth, require('./routes/workflows'));
-app.use('/api/pipelines', requireAuth, require('./routes/pipelines'));
 app.use('/api/teams', requireAuth, require('./routes/teams'));
 app.use('/api/documents', requireAuth, require('./routes/documents'));
-app.use('/api/loans', requireAuth, require('./routes/loans'));
 app.use('/api/admin', requireAuth, require('./routes/admin'));
 app.use('/api/finance', requireAuth, require('./routes/finance'));
-app.use('/api/c360', requireAuth, require('./routes/customer360'));
 app.use('/api/email-settings', requireAuth, require('./routes/emailSettings'));
 app.use('/api/wa-quick-templates', requireAuth, require('./routes/waQuickTemplates'));
+app.use('/api/message-templates', requireAuth, require('./routes/messageTemplates'));   // (v1.12)
 app.use('/api/inbox', requireAuth, require('./routes/inbox'));
 // Public: hit by recipients' mail clients, which have no CRM session.
 app.use('/api/track', require('./routes/tracking'));
 app.use('/api/email-campaigns', requireAuth, require('./routes/emailCampaigns'));
 app.use('/api/ai-actions', requireAuth, require('./routes/aiActions'));
 app.use('/api/saved-filters', requireAuth, require('./routes/savedFilters'));
-// Support Desk: Command Center, SLA engine, settings, and the support-record
-// modules (registered in db-phase46) served by a shared table router.
-app.use('/api/support', requireAuth, require('./routes/support'));
-const tableRecords = require('./routes/tableRecords');
-app.use('/api/kb_articles', requireAuth, tableRecords({ table: 'kb_articles', permission: 'kb_articles', searchColumns: ['title', 'summary', 'tags', 'article_number'], numberColumn: 'article_number', numberPrefix: 'KB-' }));
-app.use('/api/major_incidents', requireAuth, tableRecords({ table: 'major_incidents', permission: 'major_incidents', searchColumns: ['title', 'incident_number'], numberColumn: 'incident_number', numberPrefix: 'INC-' }));
-app.use('/api/problems', requireAuth, tableRecords({ table: 'problems', permission: 'problems', searchColumns: ['title', 'problem_number', 'category'], numberColumn: 'problem_number', numberPrefix: 'PRB-' }));
-app.use('/api/service_catalog', requireAuth, tableRecords({ table: 'service_catalog_items', permission: 'service_catalog', searchColumns: ['name', 'category'], orderBy: 'category, name' }));
-app.use('/api/assets', requireAuth, tableRecords({ table: 'assets', permission: 'assets', searchColumns: ['asset_name', 'asset_tag', 'serial_number'], numberColumn: 'asset_tag', numberPrefix: 'AST-' }));
-
 // ---------------------------------------------------------------------------
 // Per-customer extensions — features built for ONE customer.
 // ---------------------------------------------------------------------------
@@ -318,9 +316,45 @@ extensions.load(app);
 // features does this customer have?" is answerable without an SSH session.
 app.get('/api/extensions', requireAuth, (req, res) => res.json(extensions.status()));
 
+// (v1.13) An error no route caught: a plain sentence in JSON, never Express's
+// HTML page ("Internal Server Error"). A record still used by others (a
+// course with batches, say) says so instead of failing.
+const TABLE_LABEL = {
+  leads: 'enquiry', calls: 'calls', meetings: 'meetings', tasks: 'tasks', notes: 'notes', documents: 'documents', users: 'user', teams: 'team',
+  branches: 'branch', academic_years: 'academic year', courses: 'course', subjects: 'subject', batches: 'batch',
+};
+const PLURAL_LABEL = { leads: 'enquiries', users: 'users', teams: 'teams', branches: 'branches', academic_years: 'academic years', courses: 'courses', subjects: 'subjects', batches: 'batches' };
+const tableWord = (t) => TABLE_LABEL[t] || String(t || 'other records').replace(/_/g, ' ');
+const tablesWord = (t) => PLURAL_LABEL[t] || tableWord(t);
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (res.headersSent) return undefined;
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) return res.status(413).json({ error: 'What was sent is too large.' });
+  if (err && (err.type === 'entity.parse.failed')) return res.status(400).json({ error: 'The request could not be read.' });
+  if (err && err.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
+    const m = /on table "([^"]+)" violates foreign key constraint "[^"]*" on table "([^"]+)"/.exec(err.pgMessage || '');
+    const what = m ? tableWord(m[1]) : 'record';
+    const usedBy = m ? tablesWord(m[2]) : 'other records';
+    const deleting = req.method === 'DELETE' || /^update or delete/i.test(err.pgMessage || '');
+    return res.status(409).json({
+      error: deleting && m && m[1] === 'users' && ['payslips', 'staff_advances'].includes(m[2])
+        ? 'This person has payslips or salary advances, which are kept for the records. Make the user inactive instead of deleting.'
+        : deleting
+        ? `This ${what} is still linked to ${usedBy}, so it cannot be deleted. Delete those first, or move them to another ${what}.`
+        : `This refers to a ${usedBy.replace(/s$/, '')} that does not exist (any more).`,
+      code: 'IN_USE',
+    });
+  }
+  if (err && err.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'That is already used by another record.', code: 'DUPLICATE' });
+  if (err && err.code === 'SQLITE_CONSTRAINT_NOTNULL') return res.status(400).json({ error: 'A required value is missing.', code: 'REQUIRED' });
+  if (err && err.status && err.status < 500) return res.status(err.status).json({ error: err.message });
+  console.error('[error]', req.method, req.originalUrl, err && err.stack ? err.stack : err);
+  return res.status(500).json({ error: 'Something went wrong on the server. Please try again; if it keeps happening, tell your administrator.' });
+});
+
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`Placement CRM API running on port ${PORT}`);
+  console.log(`iCRM Institute API running on port ${PORT}`);
   // Background inbound-mail polling. Failure here must never stop the API
   // from serving — it's an optional feature.
   try {
@@ -329,21 +363,6 @@ app.listen(PORT, () => {
   } catch (e) {
     console.warn('Inbound email polling not started:', e.message);
   }
-
-  // Overdue is a fact about today, not a state anyone sets, so invoices that
-  // passed their due date overnight are swept into Overdue on boot and once
-  // an hour after. Without this, a workflow or report filtering on status
-  // would disagree with what the list plainly shows.
-  const sweepOverdue = () => {
-    try {
-      const changed = require('./services/documentService').markOverdue();
-      if (changed) console.log(`[invoices] ${changed} invoice(s) marked overdue`);
-    } catch (e) {
-      console.warn('[invoices] overdue sweep failed:', e.message);
-    }
-  };
-  sweepOverdue();
-  setInterval(sweepOverdue, 60 * 60 * 1000).unref();
 
   // Follow-up reminders: bring older follow-up dates into the schedule, and
   // send Web Push reminders to people who do not have the CRM open.
@@ -355,24 +374,19 @@ app.listen(PORT, () => {
 
   // Workflows: the time-based ones ("untouched for 3 days", "follow-up
   // overdue", "every day at 9:30") and the steps that are waiting.
+  // Fee reminders (due soon / today / overdue) once a day after 9 am
+  try {
+    require('./services/feeMessages').start();
+    require('./services/attendance').start();
+    require('./services/accounts').start();
+  } catch (e) {
+    console.warn('[fee reminders] not started:', e.message);
+  }
+
   try {
     require('./services/workflows/engine').start();
   } catch (e) {
     console.warn('[workflows] clock not started:', e.message);
   }
 
-  // Support Desk: give pre-existing tickets an SLA policy once, then keep
-  // SLA states, warnings, breaches and escalations current every minute.
-  try {
-    const supportEngine = require('./services/supportEngine');
-    const n = supportEngine.backfillPolicies();
-    if (n) console.log(`[support] applied SLA policies to ${n} existing ticket(s)`);
-    const sweepSupport = () => {
-      try { supportEngine.sweepAll(); } catch (e) { console.warn('[support] SLA sweep failed:', e.message); }
-    };
-    sweepSupport();
-    setInterval(sweepSupport, 60 * 1000).unref();
-  } catch (e) {
-    console.warn('[support] engine not started:', e.message);
-  }
 });
