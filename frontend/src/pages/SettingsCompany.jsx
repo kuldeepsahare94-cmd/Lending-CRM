@@ -124,7 +124,7 @@ export default function SettingsCompany() {
     <div className="w-full">
       <PageHeader
         title="Company Profile"
-        subtitle="Your letterhead, tax identity and bank details — used on every quotation, proforma and invoice."
+        subtitle="Your letterhead, tax identity and bank details — used on receipts, ID cards and letters."
         icon={Building2}
         accent="settings"
       />
@@ -180,8 +180,8 @@ export default function SettingsCompany() {
           <h2 className="text-sm font-semibold text-ink mb-1">Tax</h2>
           <p className="text-xs text-[var(--color-muted)] mb-3 flex items-start gap-1.5">
             <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-            Your state decides how tax is split on every invoice: the same state as the customer means
-            CGST + SGST, a different state means IGST.
+            Printed on fee receipts. If you charge GST on fees, your state decides how it is split:
+            the same state as the student means CGST + SGST, a different state means IGST.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <Field label="GSTIN" hint="The first two digits set your state automatically.">
@@ -215,8 +215,8 @@ export default function SettingsCompany() {
             <Landmark className="w-4 h-4 text-[var(--color-muted)]" /> Bank details
           </h2>
           <p className="text-xs text-[var(--color-muted)] mb-3">
-            Printed on proformas and invoices. Leave blank and the bank block is simply left off —
-            an empty "Bank Details" heading on an invoice looks like a mistake.
+            Printed on fee receipts. Leave blank and the bank block is simply left off —
+            an empty "Bank Details" heading on a receipt looks like a mistake.
           </p>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <Field label="Bank">
@@ -267,6 +267,22 @@ export default function SettingsCompany() {
               <input className={input} disabled={!editable} value={form.signatory_name || ''}
                 onChange={(e) => set('signatory_name')(e.target.value)} placeholder="Authorised Signatory" />
             </Field>
+            <Field label="Tagline" hint="One line under the institute name on receipts, payslips and certificates.">
+              <input className={input} disabled={!editable} value={form.tagline || ''} maxLength={120}
+                onChange={(e) => set('tagline')(e.target.value)} placeholder="JEE · NEET · Foundation — since 2012" />
+            </Field>
+          </div>
+          <div className="mt-4">
+            <span className="text-[11px] text-[var(--color-muted)] font-medium">Document colour</span>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {['#1E3A8A', '#0F766E', '#7A1C30', '#4C1D95', '#1F2937', '#9A3412'].map((c) => (
+                <button key={c} type="button" disabled={!editable} onClick={() => set('doc_accent')(c)} aria-label={`Colour ${c}`}
+                  className="w-8 h-8 rounded-full disabled:opacity-50" style={{ background: c, outline: (form.doc_accent || '#1E3A8A') === c ? '2px solid var(--color-ink)' : 'none', outlineOffset: 2 }} />
+              ))}
+              <input type="color" disabled={!editable} value={/^#[0-9a-f]{6}$/i.test(form.doc_accent || '') ? form.doc_accent : '#1E3A8A'}
+                onChange={(e) => set('doc_accent')(e.target.value)} className="w-8 h-8 rounded cursor-pointer" aria-label="Another colour" />
+              <span className="t-meta">The band, headings and tables of every receipt, payslip and certificate. Logos must be PNG or JPG to print.</span>
+            </div>
           </div>
         </section>
 

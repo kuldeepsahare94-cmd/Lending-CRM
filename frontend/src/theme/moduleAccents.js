@@ -4,7 +4,7 @@
 // The product previously had almost no colour at page-body scale — accent
 // colour lived only in small icon chips, everything else was white/grey.
 // That reads as "dull" regardless of how correct the layout is, and it also
-// meant every module looked identical: Leads, Accounts, Opportunities, all
+// meant every module looked identical: Enquiries, Courses, Batches, all
 // the same grey icon in the same grey sidebar row.
 //
 // This gives each module its own identity colour — used consistently for
@@ -20,16 +20,15 @@
 
 export const MODULE_ACCENTS = {
   leads:          { solid: '#C026D3', soft: '#FAE8FF', from: '#E879F9', to: '#A21CAF' }, // fuchsia
-  accounts:       { solid: '#2563EB', soft: '#EFF6FF', from: '#60A5FA', to: '#1D4ED8' }, // blue
-  contacts:       { solid: '#0D9488', soft: '#F0FDFA', from: '#2DD4BF', to: '#0F766E' }, // teal
-  opportunities:  { solid: '#D97706', soft: '#FFFBEB', from: '#FBBF24', to: '#B45309' }, // amber
-  quotations:     { solid: '#0891B2', soft: '#ECFEFF', from: '#22D3EE', to: '#0E7490' }, // cyan
-  subscriptions:  { solid: '#059669', soft: '#ECFDF5', from: '#34D399', to: '#047857' }, // emerald
-  tickets:        { solid: '#E11D48', soft: '#FFF1F2', from: '#FB7185', to: '#BE123C' }, // rose
+  branches:       { solid: '#2563EB', soft: '#EFF6FF', from: '#60A5FA', to: '#1D4ED8' }, // blue
+  courses:        { solid: '#0D9488', soft: '#F0FDFA', from: '#2DD4BF', to: '#0F766E' }, // teal
+  batches:        { solid: '#D97706', soft: '#FFFBEB', from: '#FBBF24', to: '#B45309' }, // amber
+  subjects:       { solid: '#0891B2', soft: '#ECFEFF', from: '#22D3EE', to: '#0E7490' }, // cyan
+  academic_years: { solid: '#059669', soft: '#ECFDF5', from: '#34D399', to: '#047857' }, // emerald
+  students:       { solid: '#6C4FF7', soft: '#F0EDFF', from: '#8B7BFA', to: '#5137D9' }, // brand violet (Phase 68: rose read as "overdue" next to the fee figures)
   tasks:          { solid: '#4F46E5', soft: '#EEF2FF', from: '#818CF8', to: '#4338CA' }, // indigo
   meetings:       { solid: '#0284C7', soft: '#F0F9FF', from: '#38BDF8', to: '#0369A1' }, // sky
   calls:          { solid: '#EA580C', soft: '#FFF7ED', from: '#FB923C', to: '#C2410C' }, // orange
-  products:       { solid: '#DB2777', soft: '#FDF2F8', from: '#F472B6', to: '#BE185D' }, // pink
   payments:       { solid: '#16A34A', soft: '#F0FDF4', from: '#4ADE80', to: '#15803D' }, // green
   documents:      { solid: '#475569', soft: '#F8FAFC', from: '#94A3B8', to: '#334155' }, // slate
   notes:          { solid: '#CA8A04', soft: '#FEFCE8', from: '#FDE047', to: '#A16207' }, // yellow

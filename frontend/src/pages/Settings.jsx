@@ -1,21 +1,13 @@
 /*
- * Settings — organised around what iCRM actually has.
- *
- * Every card links to a working configuration screen. Two leftovers from the
- * base application were removed:
- *   - Receipt Templates (Institute A / Institute B, placeholder text): payment
- *     receipts now print the Company Profile letterhead, like quotations,
- *     proforma invoices and invoices. No separate receipt template exists.
- *   - Master Option Lists (Lead Source / Qualification / Payment Mode cards):
- *     replaced by Dropdown Options, which manages those same shared lists AND
- *     every field's dropdown, and shows which fields each list feeds.
+ * Settings — organised around what iCRM Institute has.
+ * Every card links to a working configuration screen.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarDays, Settings as SettingsIcon, Sparkles, Database, ShieldCheck, Boxes, Zap, GitBranch, Users2, History,
-  Percent, Mail, LayoutList, Check, AlertTriangle, Building2, LayoutTemplate, ListChecks, Bell, Search, Palette,
-  UserCog, KeyRound, LifeBuoy, MessageCircle, Radio, Wrench, GitMerge, PhoneCall, ReceiptText, MapPinned, ChevronRight
+  Percent, Mail, LayoutList, Check, AlertTriangle, Building2, ListChecks, Bell, Search, Palette,
+  UserCog, KeyRound, MessageCircle, Radio, Wrench, GitMerge, PhoneCall, Smartphone, ChevronRight, MessageSquareText, School, Layers, IdCard, Wallet, Tag, CalendarCheck, Calculator, Banknote,
 } from 'lucide-react';
 import { api } from '../api';
 import { usePermissions } from '../context/usePermissions';
@@ -62,75 +54,97 @@ function AiAuditLog() {
 function sections(can) {
   return [
     {
-      title: 'General', icon: Building2, tint: '#D97706',
+      title: 'Institute', icon: School, tint: '#2563EB',
       items: [
+        { to: '/settings/institute', icon: School, tint: '#2563EB', title: 'Institute', show: can('settings', 'view'),
+          desc: 'Coaching, school or college — sets the words (Course or Class, Batch or Section) and the fields that show.',
+          keywords: 'institute type coaching school college words class section batch course' },
+        { to: '/records/branches', icon: Building2, tint: '#0EA5E9', title: 'Branches', show: can('branches', 'view'),
+          desc: 'Your branches. Every record belongs to one; branch users see only their branch.',
+          keywords: 'branch centre center head office location' },
+        { to: '/records/academic_years', icon: CalendarDays, tint: '#8B5CF6', title: 'Sessions / Academic Years', show: can('academic_years', 'view'),
+          desc: 'The years admissions and batches belong to, and which one is current.' },
+        { to: '/records/courses', icon: Layers, tint: '#3B82F6', title: 'Courses / Classes', show: can('courses', 'view'),
+          desc: 'What you teach, its fee and the most EMIs, and its subjects.' },
+        { to: '/settings/fees', icon: Wallet, tint: '#7C3AED', title: 'Fees & Payments', show: can('settings', 'view'),
+          desc: 'Receipt numbers, discount limit, reminders to parents, and Razorpay online payment.',
+          keywords: 'fees receipt payment razorpay upi emi reminder late fee discount online' },
+        { to: '/records/fee_types', icon: Tag, tint: '#0D9488', title: 'Fee Types', show: can('fee_types', 'view'),
+          desc: 'Tuition, admission, exam, books, bus… with their usual amount and GST.',
+          keywords: 'fee type head tuition admission exam transport bus books gst' },
+        { to: '/settings/accounts', icon: Calculator, tint: '#4F46E5', title: 'Accounts', show: can('settings', 'view'),
+          desc: 'Voucher numbers, locking the books, where fees go (cash / bank, income ledgers), GST, ledgers and groups.',
+          keywords: 'accounts accounting tally ledger voucher journal books lock gst bank cash income expense chart' },
+        { to: '/settings/payroll', icon: Banknote, tint: '#059669', title: 'Payroll', show: can('settings', 'view'),
+          desc: 'Days in a month, unmarked days, late cut, PF / ESI rates and limits, professional tax slabs, payslip note.',
+          keywords: 'payroll salary payslip pf esi professional tax pt tds lop loss of pay late advance staff wages' },
+        { to: '/settings/attendance', icon: CalendarCheck, tint: '#0D9488', title: 'Attendance & Machines', show: can('settings', 'view'),
+          desc: 'Late rule, minimum %, absent messages to parents, holidays, and biometric machines (eSSL, Identix, ZKTeco, Matrix, Hikvision…).',
+          keywords: 'attendance biometric fingerprint face machine device essl identix zkteco matrix cosec hikvision holiday absent late punch' },
+        { to: '/settings/id-cards', icon: IdCard, tint: '#059669', title: 'ID Cards', show: can('settings', 'view'),
+          desc: 'How student ID cards look: colour, the details printed, signature and validity.',
+          keywords: 'id card identity card student card print photo qr' },
         { to: '/settings/company', icon: Building2, tint: '#D97706', title: 'Company Profile', show: can('settings', 'edit'),
-          desc: 'Letterhead, GSTIN, bank details and signature — printed on quotations, proforma invoices, invoices and payment receipts.' },
+          desc: 'Letterhead, GSTIN, bank details, logo and signature — printed on receipts, ID cards and certificates.' },
+      ],
+    },
+    {
+      title: 'General', icon: SettingsIcon, tint: '#D97706',
+      items: [
         { to: '/appearance', icon: Palette, tint: '#DB2777', title: 'Appearance', show: true,
-          desc: 'Theme and colours for your CRM.' },
+          desc: 'Theme and colours.' },
         { to: '/settings/notifications', icon: Bell, tint: '#F59E0B', title: 'Follow-up Reminders', show: true,
           desc: 'Your reminders: browser notifications, sound, timing and overdue reminders.',
           keywords: 'notification reminder browser sound follow up' },
         { to: '/settings/calendar', icon: CalendarDays, tint: '#0284C7', title: 'My Calendar', show: true,
           desc: 'Connect your own Google or Outlook calendar and choose what syncs each way.' },
+        { to: '/settings/finance', icon: Percent, tint: '#059669', title: 'Taxes & Currencies', show: can('settings', 'edit'),
+          desc: 'GST rates and the currency for fees.' },
       ],
     },
     {
-      title: 'CRM Configuration', icon: Boxes, tint: '#7C3AED',
+      title: 'Modules & Fields', icon: Boxes, tint: '#7C3AED',
       items: [
         { to: '/settings/modules', icon: Boxes, tint: '#7C3AED', title: 'Modules & Fields', show: can('settings', 'edit'),
           desc: 'Create custom modules, add fields to any module, and manage each dropdown’s options.' },
         { to: '/settings/layout', icon: LayoutList, tint: '#4F46E5', title: 'Field & Layout Manager', show: can('settings', 'edit'),
           desc: 'Choose which fields appear in list, form and detail views, their order, and which are mandatory.' },
         { to: '/settings/options', icon: ListChecks, tint: '#0D9488', title: 'Dropdown Options', show: can('fields', 'view') || can('settings', 'view'),
-          desc: 'Add, rename, reorder and deactivate the choices in every dropdown — Status, Stage, Source, Priority, custom fields and shared lists.',
-          keywords: 'options master lists lead source qualification payment mode status priority' },
-        { to: '/settings/pipelines', icon: GitBranch, tint: '#2563EB', title: 'Pipelines', show: can('settings', 'edit'),
-          desc: 'The stages deals move through — names, colours and win probability.' },
+          desc: 'Add, rename, reorder and deactivate the choices in every dropdown — Status, Source, Qualification, custom fields and shared lists.',
+          keywords: 'options master lists enquiry source qualification status' },
         { to: '/duplicates', icon: GitMerge, tint: '#D97706', title: 'Duplicate Check & Merge',
-          show: can('leads', 'view') || can('contacts', 'view') || can('accounts', 'view') || can('settings', 'view'),
-          desc: 'Stop the same lead, contact or account being created twice (same mobile or email), and merge the duplicates already here.',
+          show: can('leads', 'view') || can('settings', 'view'),
+          desc: 'Stop the same enquiry being created twice (same mobile or email), and merge the duplicates already here.',
           keywords: 'duplicate merge dedupe same mobile email repeat enquiry' },
       ],
     },
     {
-      title: 'Sales & Documents', icon: LayoutTemplate, tint: '#0284C7',
+      title: 'Staff App', icon: Smartphone, tint: '#0D9488',
       items: [
-        { to: '/settings/template-library', icon: LayoutTemplate, tint: 'var(--color-brand)', title: 'Template Library', show: can('document_templates', 'view'),
-          desc: 'Ready-made quotation, proforma and invoice designs. Pick one, add your logo and colours.' },
-        { to: '/settings/templates', icon: LayoutTemplate, tint: '#0284C7', title: 'Template Builder', show: can('document_templates', 'view'),
-          desc: 'My Templates, and the block-by-block builder for a completely custom document design.' },
-        { to: '/settings/finance', icon: Percent, tint: '#059669', title: 'Taxes & Currencies', show: can('settings', 'edit'),
-          desc: 'Tax rates for quotes and products, and the currencies you trade in.' },
-      ],
-    },
-    {
-      title: 'Field Team & Expenses', icon: MapPinned, tint: '#0D9488',
-      items: [
-        { to: '/settings/field', icon: MapPinned, tint: '#0284C7', title: 'Field force', show: can('settings', 'view'),
-          desc: 'The mobile app for the field team: punch in / out with location and selfie, live tracking, km per day, visits at customers, km as an expense.' },
-        { to: '/settings/expenses', icon: ReceiptText, tint: '#0D9488', title: 'Expenses', show: can('settings', 'view'),
-          desc: 'Field expenses with bill photos, km and daily allowance: categories and limits, who approves, who pays, advances. Also what the mobile app uses.' },
+        { to: '/settings/staff-app', icon: Smartphone, tint: '#0284C7', title: 'Staff app', show: can('settings', 'view'),
+          desc: 'The Android app for your staff: calls with recordings, follow-ups, chat, leave requests, phone alerts.',
+          keywords: 'mobile app android phone alerts firebase leave calls recording' },
       ],
     },
     {
       title: 'Calls, Email & Messaging', icon: PhoneCall, tint: '#3B5BFF',
       items: [
-        { to: '/settings/telephony', icon: PhoneCall, tint: '#3B5BFF', title: 'Telephony (MCube IVR)', show: can('settings', 'view'),
-          desc: 'Click-to-call, automatic call logs with recordings, incoming-call pop-up, missed-call follow-ups, auto-dialer and live calls.' },
         { to: '/settings/email', icon: Mail, tint: '#7C3AED', title: 'Email', show: true,
-          desc: 'The mailbox this CRM sends from — organisation-wide or your own address.' },
+          desc: 'The mailbox the system sends from — organisation-wide or your own address.' },
+        { to: '/settings/message-templates', icon: MessageSquareText, tint: '#0D9488', title: 'Message templates', show: true,
+          desc: 'Ready WhatsApp and email messages with files (brochure, fee structure) that everyone can send from the web and the app.',
+          keywords: 'whatsapp email template message brochure pdf attachment document quick reply' },
         { to: '/whatsapp', icon: MessageCircle, tint: '#16A34A', title: 'WhatsApp', show: can('whatsapp', 'view'),
           desc: 'WhatsApp Business providers, templates, workflows and campaigns.' },
-        { to: '/lead-sources', icon: Radio, tint: '#C026D3', title: 'Lead Sources', show: can('lead_sources', 'view'),
-          desc: 'Website forms and Facebook / Instagram lead ads that create leads automatically.' },
+        { to: '/lead-sources', icon: Radio, tint: '#C026D3', title: 'Enquiry Sources', show: can('lead_sources', 'view'),
+          desc: 'Website forms and Facebook / Instagram lead ads that create enquiries automatically.' },
       ],
     },
     {
       title: 'Users & Security', icon: KeyRound, tint: '#475569',
       items: [
         { to: '/users', icon: UserCog, tint: '#475569', title: 'Users', show: can('users', 'view'),
-          desc: 'Add people, set their role, deactivate leavers.' },
+          desc: 'Add people, set their role and their branch, deactivate leavers.' },
         { to: '/roles', icon: KeyRound, tint: '#475569', title: 'Roles & Permissions', show: can('users', 'view'),
           desc: 'What each role can view, create, edit, delete and export — module by module.' },
         { to: '/settings/teams', icon: Users2, tint: '#7C3AED', title: 'Teams', show: can('settings', 'edit'),
@@ -140,19 +154,17 @@ function sections(can) {
       ],
     },
     {
-      title: 'Automation & Support', icon: Zap, tint: '#7C3AED',
+      title: 'Automation', icon: Zap, tint: '#7C3AED',
       items: [
         { to: '/settings/workflows', icon: Zap, tint: '#7C3AED', title: 'Workflows', show: can('settings', 'edit'),
-          desc: 'Rules that run by themselves: tell the owner, remind about untouched leads, escalate to the manager, daily lists. Ready-made ones for every module.' },
-        { to: '/support/settings', icon: LifeBuoy, tint: '#E11D48', title: 'Support Desk Settings', show: can('support', 'view'),
-          desc: 'SLA policies, queues, categories, escalation rules and business hours for tickets.' },
+          desc: 'Rules that run by themselves: tell the counsellor, remind about untouched enquiries, escalate to the manager, daily lists.' },
       ],
     },
     {
       title: 'System', icon: History, tint: '#475569',
       items: [
         { to: '/settings/data', icon: History, tint: '#475569', title: 'Data & Audit Log', show: can('settings', 'view'),
-          desc: 'Import and export any module as CSV, and see who changed what — including dropdown option changes.' },
+          desc: 'Import and export any module as CSV, demo data, and see who changed what.' },
       ],
     },
   ];
@@ -206,12 +218,13 @@ export default function Settings() {
   // admin to press the button and find out.
   const [demoStatus, setDemoStatus] = useState(null);
   const loadDemoStatus = () => api.demoDataStatus().then(setDemoStatus).catch(() => {});
+  useEffect(() => { if (can('settings', 'edit')) loadDemoStatus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const seedDemoData = async () => {
     const already = demoStatus?.loaded;
     const warning = already
       ? 'Demo data is already loaded. This will clear it and build a fresh set.\n\nRecords you entered yourself are not touched. Continue?'
-      : 'This fills every module with about a year of sample data — customers, deals, quotations, proforma invoices, invoices, payments, tickets and activity history.\n\nYou can remove all of it again with one click. Continue?';
+      : 'This fills the system with sample data for a demo — branches, courses, batches, counsellors, enquiries with calls, follow-ups and tasks.\n\nYou can remove all of it again with one click. Continue?';
     if (!confirm(warning)) return;
     setSeeding(true);
     setSeedResult(null);
@@ -257,11 +270,9 @@ export default function Settings() {
     }
   };
 
-  // "42 accounts, 130 leads, 66 invoices…" — ordered the way someone walking
+  // "3 branches, 12 courses, 400 enquiries…" — ordered the way someone walking
   // through the sidebar would meet them, not alphabetically.
-  const DEMO_ORDER = ['leads', 'accounts', 'contacts', 'opportunities', 'quotations',
-    'proforma_invoices', 'invoices', 'payments', 'products', 'subscriptions', 'tickets',
-    'calls', 'meetings', 'tasks', 'notes', 'emails', 'documents'];
+  const DEMO_ORDER = ['branches', 'users', 'academic_years', 'programs', 'courses', 'subjects', 'batches', 'leads', 'calls', 'meetings', 'tasks', 'notes', 'follow_ups'];
   const demoLabel = (k) => k.replace(/_/g, ' ');
 
   const [downloading, setDownloading] = useState(false);
@@ -333,8 +344,8 @@ export default function Settings() {
 
   const term = q.trim().toLowerCase();
   const matches = (text) => !term || text.toLowerCase().includes(term);
-  const showRepair = can('settings', 'edit') && matches('repair administrator access permissions company profile document templates fix system');
-  const showDemo = false;   // demo data is not offered on this customer's CRM
+  const showRepair = can('settings', 'edit') && matches('repair administrator access permissions branches courses fix system');
+  const showDemo = can('settings', 'edit') && matches('demo data sample system');
   const showBackup = can('settings', 'edit') && matches('database backup restore download email system');
   const showAiLog = can('users', 'view') && matches('ai assistant activity log audit system');
   const anySystemPanel = showRepair || showDemo || showBackup || showAiLog;
@@ -353,7 +364,7 @@ export default function Settings() {
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-faint)]" />
-          <input className="input w-full pl-9" style={{ paddingLeft: 36 }} placeholder="Search settings…" value={q} onChange={(e) => setQ(e.target.value)}
+          <input className="input w-full pl-9" style={{ paddingLeft: '2.25rem' }} placeholder="Search settings…" value={q} onChange={(e) => setQ(e.target.value)}
             aria-label="Search settings" />
         </div>
       </div>
@@ -445,9 +456,9 @@ export default function Settings() {
                   <div>
                     <h3 className="text-sm font-semibold text-ink">Demo Data</h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Fills every module with about a year of realistic sample data — customers, deals,
-                      quotations, proforma invoices, invoices with part payments, tickets and activity
-                      history — so reports and dashboards have something real to show.
+                      Fills the system with realistic sample data for a demo — branches, courses,
+                      batches, counsellors and enquiries with their calls, follow-ups and tasks — so
+                      the dashboard and reports have something real to show.
                       {' '}Records you entered yourself are never touched.
                     </p>
 

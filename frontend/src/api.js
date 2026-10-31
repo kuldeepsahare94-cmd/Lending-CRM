@@ -3,6 +3,20 @@
 const API_ROOT = import.meta.env.VITE_API_BASE_URL || '';
 const BASE = `${API_ROOT}/api`;
 
+// The branch picked at the top of the screen (iCRM Institute). Every request
+// carries it, and the server shows that branch only (empty = all my branches).
+export const BRANCH_KEY = 'icrm.branch';
+export function activeBranch() {
+  try { return localStorage.getItem(BRANCH_KEY) || ''; } catch { return ''; }
+}
+export function authHeaders(token) {
+  const h = {};
+  if (token) h.Authorization = `Bearer ${token}`;
+  const b = activeBranch();
+  if (b) h['X-Branch-Id'] = b;
+  return h;
+}
+
 // The API's full address, for code that runs outside this page (the
 // notification service worker calls it from a browser notification's buttons).
 export function absoluteApiBase() {
@@ -25,7 +39,7 @@ export function absoluteApiBase() {
 export async function downloadFile(path, fallbackName = 'download') {
   const token = localStorage.getItem('cd_token');
   const res = await fetch(BASE + path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: authHeaders(token),
   });
 
   if (!res.ok) {
@@ -73,7 +87,7 @@ export function mediaUrl(path) {
 // the browser would ask for it without the sign-in).
 export async function fetchBlob(path) {
   const token = localStorage.getItem('cd_token');
-  const res = await fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const res = await fetch(BASE + path, { headers: authHeaders(token) });
   if (!res.ok) {
     let message = `Could not open the file (${res.status})`;
     try { const d = await res.json(); if (d?.error) message = d.error; } catch { /* keep status */ }
@@ -85,7 +99,7 @@ export async function fetchBlob(path) {
 // Opens a PDF in a new tab (rather than saving it), still authenticated.
 export async function openFileInTab(path) {
   const token = localStorage.getItem('cd_token');
-  const res = await fetch(BASE + path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const res = await fetch(BASE + path, { headers: authHeaders(token) });
   if (!res.ok) {
     let message = `Could not open the file (${res.status})`;
     try { const d = await res.json(); if (d?.error) message = d.error; } catch { /* keep status */ }
@@ -124,11 +138,11 @@ const PREFETCH_TTL_MS = 10 * 1000;
 const META = [
   /^\/modules(\?.*)?$/, /^\/modules\/[A-Za-z0-9_]+$/, /^\/modules\/\d+\/fields$/, /^\/modules\/\d+\/layout\/[a-z_]+$/,
   /^\/option-lists\/module\/[a-z0-9_]+$/, /^\/option-lists\/shared\/[a-z0-9_]+\/options$/,
-  /^\/users\/directory$/, /^\/saved-filters(\/layout)?\?module=[A-Za-z0-9_%]+$/, /^\/pipelines(\?.*)?$/,
-  /^\/finance\/(currencies|taxes)$/, /^\/settings\/master-options(\?.*)?$/, /^\/company-profile$/, /^\/support\/meta$/,
+  /^\/users\/directory$/, /^\/saved-filters(\/layout)?\?module=[A-Za-z0-9_%]+$/,
+  /^\/finance\/(currencies|taxes)$/, /^\/settings\/master-options(\?.*)?$/, /^\/company-profile$/,
 ];
 // Requests that must always go to the server (live counters, polling, auth).
-const NEVER_SHARED = /^\/(auth\/|chat\/|notifications|follow-ups\/reminders|health|duplicates\/check|telephony\/|expenses\/(meta|summary)$)/;
+const NEVER_SHARED = /^\/(auth\/|chat\/|notifications|follow-ups\/reminders|health|duplicates\/check)/;
 const getCache = new Map();          // path -> { at, data, meta, prefetched, promise }
 let cacheOwner = null;
 
@@ -153,7 +167,7 @@ function setBusy(delta) {
   busyCount = Math.max(0, busyCount + delta);
   busyListeners.forEach((fn) => { try { fn(busyCount); } catch { /* ignore */ } });
 }
-const BACKGROUND = /^\/(chat\/|notifications|follow-ups\/(reminders|preferences|push)|calendar\/agenda|health|duplicates\/check|telephony\/(live|status|pending|dialer\/\d+$)|expenses\/(meta|summary|check)$)/;
+const BACKGROUND = /^\/(chat\/|notifications|follow-ups\/(reminders|preferences|push)|calendar\/agenda|health|duplicates\/check)/;
 
 // ---- Learning what each screen loads -------------------------------------
 // For a screen like /leads/132 the requests are remembered with the number
@@ -291,9 +305,8 @@ async function rawReq(method, path, body, token, { quiet = false } = {}) {
 }
 
 async function sendRequest(method, path, body, token) {
-  const headers = {};
+  const headers = { ...authHeaders(token) };
   if (body) headers['Content-Type'] = 'application/json';
-  if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(BASE + path, {
     method,
@@ -354,7 +367,7 @@ const qs = (params) => {
 //   cancel  nothing is saved
 // The call then resolves with the saved (or the existing, merged) record.
 // ---------------------------------------------------------------------------
-const DUPLICATE_CHECKED = new Set(['leads', 'contacts', 'accounts']);
+const DUPLICATE_CHECKED = new Set(['leads', 'students']);
 
 function askAboutDuplicate(info) {
   return new Promise((resolve) => {
@@ -392,50 +405,115 @@ async function createChecked(path, body) {
 }
 
 // Base path for a module's records: modules with a real physical table
-// (table_name set) use their dedicated REST route (/api/accounts, ...);
+// (table_name set) use their dedicated REST route (/api/batches, ...);
 // modules with no table yet (admin-created custom modules) use the generic
 // JSON-backed route from the metadata layer.
 const recordsBase = (module) => (module.table_name ? `/${module.api_name}` : `/records/${module.api_name}`);
 
 export const api = {
+  // iCRM Institute: the institute's type and words, and my branches
+  instituteContext: () => req('GET', '/institute/context'),
+  instituteSettings: () => req('GET', '/institute/settings'),
+  saveInstituteSettings: (body) => req('PUT', '/institute/settings', body),
+  courseSubjects: (id) => req('GET', `/courses/${id}/subjects`),
+  // students (iCRM Institute 1B)
+  admissionDraft: (leadId) => req('GET', `/leads/${leadId}/admission-draft`),
+  admitLead: (leadId, body) => req('POST', `/leads/${leadId}/admit`, body),
+  studentHistory: (id) => req('GET', `/students/${id}/history`),
+  transferStudent: (id, body) => req('POST', `/students/${id}/transfer`, body),
+  // (attendance update) the other batches a student also attends
+  // (Course → Class → Subject) the subjects a student takes
+  studentSubjects: (id) => req('GET', `/students/${id}/subjects`),
+  saveStudentSubjects: (id, body) => req('PUT', `/students/${id}/subjects`, body),
+  // (Phase 68) certificates and the branch letterhead
+  studentCertificates: (id) => req('GET', `/students/${id}/certificates`),
+  createCertificate: (id, body) => req('POST', `/students/${id}/certificates`, body),
+  cancelCertificate: (id, reason) => req('POST', `/certificates/${id}/cancel`, { reason }),
+  certificateTypes: () => req('GET', '/certificates/types'),
+  branchLetterhead: (id) => req('GET', `/branches/${id}/letterhead`),
+  saveBranchLetterhead: (id, body) => req('PUT', `/branches/${id}/letterhead`, body),
+  studentExtraBatches: (id) => req('GET', `/students/${id}/extra-batches`),
+  addStudentExtraBatch: (id, body) => req('POST', `/students/${id}/extra-batches`, body),
+  removeStudentExtraBatch: (id, batchId) => req('DELETE', `/students/${id}/extra-batches/${batchId}`),
+  uploadStudentPhoto: (id, dataUrl) => req('PUT', `/students/${id}/photo`, { data: dataUrl }),
+  deleteStudentPhoto: (id) => req('DELETE', `/students/${id}/photo`),
+  idCardSettings: () => req('GET', '/institute/id-card'),
+  // fees (iCRM Institute 1C)
+  studentFees: (id) => req('GET', `/students/${id}/fees`),
+  createFeePlan: (studentId, body) => req('POST', `/students/${studentId}/fee-plans`, body),
+  collectPayment: (studentId, body) => req('POST', `/students/${studentId}/payments`, body),
+  splitFees: (body) => req('POST', '/fees/split', body),
+  updateFeeDues: (planId, body) => req('PUT', `/fee-plans/${planId}/dues`, body),
+  cancelFeePlan: (planId, reason) => req('POST', `/fee-plans/${planId}/cancel`, { reason }),
+  cancelReceipt: (id, reason) => req('POST', `/fee-receipts/${id}/cancel`, { reason }),
+  setChequeStatus: (id, status) => req('POST', `/fee-receipts/${id}/cheque`, { status }),
+  emailReceipt: (id) => req('POST', `/fee-receipts/${id}/email`, {}),
+  payLink: (installmentId, fresh = false) => req('POST', `/fee-installments/${installmentId}/pay-link`, { new: fresh }),
+  checkPayLink: (installmentId) => req('POST', `/fee-installments/${installmentId}/pay-link/check`, {}),
+  feeOptions: () => req('GET', '/fees/options'),
+  feeSettings: () => req('GET', '/fees/settings'),
+  saveFeeSettings: (body) => req('PUT', '/fees/settings', body),
+  testRazorpay: () => req('POST', '/fees/razorpay/test', {}),
+  runFeeReminders: () => req('POST', '/fees/run-reminders', {}),
+  saveIdCardSettings: (body) => req('PUT', '/institute/id-card', body),
+  // attendance (iCRM Institute, Phase 2)
+  attendanceToday: (date) => req('GET', '/attendance/today' + qs({ date })),
+  attendanceSheet: (batchId, date) => req('GET', '/attendance/sheet' + qs({ batch_id: batchId, date })),
+  saveAttendanceSheet: (body) => req('PUT', '/attendance/sheet', body),
+  attendanceDay: (date, branchId) => req('GET', '/attendance/day' + qs({ date, branch_id: branchId })),
+  saveAttendanceDay: (body) => req('PUT', '/attendance/day', body),
+  attendanceRegister: (batchId, month) => req('GET', '/attendance/register' + qs({ batch_id: batchId, month })),
+  studentAttendance: (id) => req('GET', `/attendance/student/${id}`),
+  staffAttendance: (date, branchId) => req('GET', '/attendance/staff' + qs({ date, branch_id: branchId })),
+  saveStaffAttendance: (body) => req('PUT', '/attendance/staff', body),
+  setStaffBiometric: (userId, biometricId) => req('PUT', `/attendance/staff/${userId}/biometric`, { biometric_id: biometricId }),
+  attendanceSettings: () => req('GET', '/attendance/settings'),
+  saveAttendanceSettings: (body) => req('PUT', '/attendance/settings', body),
+  branchPlaces: () => req('GET', '/attendance/branch-places'),
+  setBranchPlace: (id, body) => req('PUT', `/attendance/branch-places/${id}`, body),
+  runAutoAbsent: () => req('POST', '/attendance/auto-absent', {}),
+  devicePunches: (id) => req('GET', `/attendance/devices/${id}/punches`),
+  processDevice: (id) => req('POST', `/attendance/devices/${id}/process`, {}),
+  importDevicePunches: (id, text) => req('POST', `/attendance/devices/${id}/import`, { text }),
+  // accounts (iCRM Institute, Phase 3A)
+  ledgerOptions: (purpose, branchId) => req('GET', '/accounts/ledger-options' + qs({ purpose, branch_id: branchId })),
+  getVoucher: (id) => req('GET', `/accounts/vouchers/${id}`),
+  createVoucher: (body) => req('POST', '/accounts/vouchers', body),
+  cancelVoucher: (id, reason) => req('POST', `/accounts/vouchers/${id}/cancel`, { reason }),
+  getExpense: (id) => req('GET', `/accounts/expenses/${id}`),
+  createExpense: (body) => req('POST', '/accounts/expenses', body),
+  cancelExpense: (id, reason) => req('POST', `/accounts/expenses/${id}/cancel`, { reason }),
+  accountsSummary: (branchId) => req('GET', '/accounts/reports/summary' + qs({ branch_id: branchId })),
+  accountsReport: (kind, params) => req('GET', `/accounts/reports/${kind}` + qs(params)),
+  accountsSettings: () => req('GET', '/accounts/settings'),
+  saveAccountsSettings: (body) => req('PUT', '/accounts/settings', body),
+  postFeesToAccounts: () => req('POST', '/accounts/post-fees', {}),
+  // payroll (iCRM Institute, Phase 3B)
+  payrollRuns: (params) => req('GET', '/payroll/runs' + qs(params || {})),
+  preparePayroll: (branchId, month) => req('POST', '/payroll/runs', { branch_id: branchId, month }),
+  payrollRun: (id) => req('GET', `/payroll/runs/${id}`),
+  postPayroll: (id) => req('POST', `/payroll/runs/${id}/post`, {}),
+  payPayroll: (id, body) => req('POST', `/payroll/runs/${id}/pay`, body),
+  undoPayrollPayment: (id, voucherId, reason) => req('POST', `/payroll/runs/${id}/undo-payment`, { voucher_id: voucherId, reason }),
+  reopenPayroll: (id, reason) => req('POST', `/payroll/runs/${id}/reopen`, { reason }),
+  deletePayroll: (id) => req('DELETE', `/payroll/runs/${id}`),
+  adjustPayslip: (id, body) => req('PUT', `/payroll/payslips/${id}`, body),
+  payrollStaff: (branchId) => req('GET', '/payroll/staff' + qs({ branch_id: branchId })),
+  giveAdvance: (body) => req('POST', '/payroll/advances', body),
+  getAdvance: (id) => req('GET', `/payroll/advances/${id}`),
+  cancelAdvance: (id, reason) => req('POST', `/payroll/advances/${id}/cancel`, { reason }),
+  myPayslips: () => req('GET', '/payroll/mine'),
+  payrollSettings: () => req('GET', '/payroll/settings'),
+  savePayrollSettings: (body) => req('PUT', '/payroll/settings', body),
+  saveRecordOf: (apiName, id, body) => (id ? req('PUT', `/${apiName}/${id}`, body) : req('POST', `/${apiName}`, body)),
+  deleteRecordOf: (apiName, id) => req('DELETE', `/${apiName}/${id}`),
+  // the whole list of one of the institute's modules (pickers): /api/<module>?status=Active
+  listAll: (apiName, params) => req('GET', `/${apiName}` + qs(params)),
+  saveCourseSubjects: (id, body) => req('PUT', `/courses/${id}/subjects`, body),
+
   // auth
   login: (username, password) => req('POST', '/auth/login', { username, password }),
   me: () => req('GET', '/auth/me'),
-
-  // loans (all amounts are whole paise; the server does every calculation)
-  loanDashboard: () => req('GET', '/loans/dashboard'),
-  loanDrill: (metric, params) => req('GET', `/loans/drill/${metric}` + qs(params)),
-  loanReceipts: (params) => req('GET', '/loans/receipts' + qs(params)),
-  loanList: (params) => req('GET', '/loans' + qs(params)),
-  loanGet: (id) => req('GET', `/loans/${id}`),
-  loanLedger: (id) => req('GET', `/loans/${id}/ledger`),
-  loanPreview: (body) => req('POST', '/loans/preview', body),
-  loanCreate: (body) => req('POST', '/loans', body),
-  loanReceipt: (id, body) => req('POST', `/loans/${id}/receipts`, body),
-  loanReverse: (id, receiptId, reason) => req('POST', `/loans/${id}/receipts/${receiptId}/reverse`, { reason }),
-  loanCollections: (params) => req('GET', '/loans/collections' + qs(params)),
-  loanCollectionAction: (id, body) => req('POST', `/loans/${id}/collection-actions`, body),
-  loanActions: (id) => req('GET', `/loans/${id}/collection-actions`),
-  loanAssignAgent: (id, userId) => req('POST', `/loans/${id}/assign-agent`, { user_id: userId }),
-  loanSettlementSummary: () => req('GET', '/loans/settlements/summary'),
-  loanCommissions: () => req('GET', '/loans/settlements/commissions'),
-  loanBatches: (params) => req('GET', '/loans/settlements/batches' + qs(params)),
-  loanBatch: (id) => req('GET', `/loans/settlements/batches/${id}`),
-  loanCreateBatch: (lenderId, body) => req('POST', `/loans/settlements/lenders/${lenderId}/batches`, body),
-  loanRemit: (id, body) => req('POST', `/loans/settlements/batches/${id}/remit`, body),
-  loanReconcile: (id) => req('POST', `/loans/settlements/batches/${id}/reconcile`, {}),
-  loanDispute: (id, reason) => req('POST', `/loans/settlements/batches/${id}/dispute`, { reason }),
-  loanReopen: (id) => req('POST', `/loans/settlements/batches/${id}/reopen`, {}),
-  loanCollateral: (params) => req('GET', '/loans/collateral' + qs(params)),
-  loanCollateralCreate: (loanId, body) => req('POST', `/loans/${loanId}/collateral`, body),
-  loanCollateralUpdate: (id, body) => req('PUT', `/loans/collateral/${id}`, body),
-  loanCollateralRelease: (id, reason) => req('POST', `/loans/collateral/${id}/release`, { reason }),
-  loanBorrowers: (params) => req('GET', '/loans/borrowers' + qs(params)),
-  loanBorrower: (module, id) => req('GET', `/loans/borrowers/${module}/${id}`),
-  loanSampleStatus: () => req('GET', '/loans/sample-data'),
-  loanSampleRun: (action) => req('POST', '/loans/sample-data', { action }),
-  loanLenders: () => req('GET', '/loans/lenders'),
-  loanLenderCreate: (body) => req('POST', '/loans/lenders', body),
 
   // leads
   listLeads: (params) => req('GET', '/leads' + qs(params)),
@@ -444,26 +522,10 @@ export const api = {
   queryLeads: (body) => ask('/leads/query', body || {}),
   getLead: (id) => req('GET', `/leads/${id}`),
   createLead: (body) => createChecked('/leads', body),
-  // Visiting cards (components/cards/ScanCardModal.jsx). cardSend: a plain request — the card
-  // screen shows "already in the CRM" itself, so no duplicate pop-up.
-  cardsMeta: () => rawReq('GET', '/cards/meta', null, localStorage.getItem('cd_token')),
-  cardsRead: (body) => ask('/cards/read', body),
-  cardsCheck: (body) => ask('/cards/check', body),
-  cardSend: (method, path, body) => req(method, path, body),
   updateLead: (id, body) => req('PUT', `/leads/${id}`, body),
   deleteLead: (id) => req('DELETE', `/leads/${id}`),
   addLeadActivity: (id, body) => req('POST', `/leads/${id}/activities`, body),
   convertLead: (id, body) => req('POST', `/leads/${id}/convert`, body),
-
-  // payments — generic, linked to an Account/Opportunity/Quotation, or a
-  // one-off payer_name when there's no specific linked record
-  listPayments: (params) => req('GET', '/payments' + qs(params)),
-  getPayment: (id) => req('GET', `/payments/${id}`),
-  createPayment: (body) => req('POST', '/payments', body),
-  updatePayment: (id, body) => req('PUT', `/payments/${id}`, body),
-  deletePayment: (id) => req('DELETE', `/payments/${id}`),
-  // Printed on the Company Profile letterhead (the same one invoices use).
-  downloadReceipt: (id) => downloadFile(`/payments/${id}/receipt`, `receipt-${id}.pdf`),
 
   // dashboard
   dashboard: () => req('GET', '/dashboard'),
@@ -473,10 +535,6 @@ export const api = {
 
   // reports
   //
-  // The per-report endpoints that used to live here (students, admissions,
-  // course-wise admissions, fee collection, placements, interviews) went with
-  // the education modules they reported on. Reports are now driven by a
-  // catalogue the backend publishes, so adding a report needs no change here.
   reportCatalogue: () => req('GET', '/reports/catalogue'),
   runReport: (key, params) => req('GET', `/reports/run/${key}` + qs(params)),
 
@@ -544,44 +602,6 @@ export const api = {
   // Names of users (and teams) that records can be assigned to — open to any
   // signed-in user, unlike listUsers which needs users:view.
   userDirectory: () => req('GET', '/users/directory'),
-  listTicketsBy: (params) => req('GET', '/tickets' + qs(params)),
-  ticketReply: (id, body) => req('POST', `/tickets/${id}/replies`, body),
-  // Support Desk
-  supportMeta: () => req('GET', '/support/meta'),
-  supportDashboard: (params) => req('GET', '/support/dashboard' + qs(params)),
-  supportQueues: (params) => req('GET', '/support/queues' + qs(params)),
-  supportInbox: (params) => req('GET', '/support/inbox' + qs(params)),
-  supportSlaMonitor: (params) => req('GET', '/support/sla-monitor' + qs(params)),
-  supportEscalations: (params) => req('GET', '/support/escalations' + qs(params)),
-  supportAckEscalation: (id) => req('POST', `/support/escalations/${id}/acknowledge`),
-  supportTicket: (id) => req('GET', `/support/tickets/${id}`),
-  supportOverride: (id, body) => req('POST', `/support/tickets/${id}/sla-override`, body),
-  supportResetSla: (id, body) => req('POST', `/support/tickets/${id}/sla-reset`, body),
-  supportCsat: (id, body) => req('POST', `/support/tickets/${id}/csat`, body),
-  supportReopen: (id, body) => req('POST', `/support/tickets/${id}/reopen`, body),
-  supportApproval: (id, body) => req('POST', `/support/tickets/${id}/approval`, body),
-  supportEscalate: (id, body) => req('POST', `/support/tickets/${id}/escalate`, body),
-  supportAutoAssign: (id, body) => req('POST', `/support/tickets/${id}/auto-assign`, body),
-  supportCatalog: () => req('GET', '/support/catalog'),
-  supportCreateRequest: (body) => req('POST', '/support/service-requests', body),
-  supportKbSearch: (params) => req('GET', '/support/kb/search' + qs(params)),
-  supportKbView: (id) => req('POST', `/support/kb/${id}/view`),
-  supportKbHelpful: (id) => req('POST', `/support/kb/${id}/helpful`),
-  supportIncidentUpdates: (id) => req('GET', `/support/incidents/${id}/updates`),
-  supportAddIncidentUpdate: (id, body) => req('POST', `/support/incidents/${id}/updates`, body),
-  supportLinkTickets: (kind, id, body) => req('POST', `/support/${kind}/${id}/tickets`, body),
-  supportProblemFromTickets: (body) => req('POST', '/support/problems/from-tickets', body),
-  supportCustomers: (params) => req('GET', '/support/customers' + qs(params)),
-  supportReports: () => req('GET', '/support/reports'),
-  supportReport: (key, params) => req('GET', `/support/reports/${key}` + qs(params)),
-  supportSettings: () => req('GET', '/support/settings'),
-  supportSaveSetting: (key, value) => req('PUT', `/support/settings/${key}`, { value }),
-  supportSave: (kind, id, body) => req(id ? 'PUT' : 'POST', `/support/${kind}${id ? `/${id}` : ''}`, body),
-  supportDelete: (kind, id) => req('DELETE', `/support/${kind}/${id}`),
-  supportAddHoliday: (calendarId, body) => req('POST', `/support/calendars/${calendarId}/holidays`, body),
-  supportDeleteHoliday: (id) => req('DELETE', `/support/holidays/${id}`),
-  supportSaveSkills: (userId, skills) => req('PUT', `/support/skills/${userId}`, { skills }),
-  supportTestPolicy: (body) => req('POST', '/support/sla-policies/test', body),
   // Saved list filters, per module
   listSavedFilters: (module) => {
     // Hand over a list page's early request (see prefetchSavedFilters) if it
@@ -694,6 +714,9 @@ export const api = {
   listModulesMeta: (includeDisabled) => req('GET', '/modules' + (includeDisabled ? '?include_disabled=1' : '')),
   getModuleMeta: (apiName) => req('GET', `/modules/${apiName}`),
   listModuleFields: (moduleId) => req('GET', `/modules/${moduleId}/fields`),
+  // (v1.11) which fields are filters, on the web and in the app
+  getFilterSettings: (moduleId) => req('GET', `/modules/${moduleId}/filter-settings`),
+  saveFilterSettings: (moduleId, body) => req('PUT', `/modules/${moduleId}/filter-settings`, body),
   createModuleMeta: (body) => req('POST', '/modules', body),
   updateModuleMeta: (id, body) => req('PUT', `/modules/${id}`, body),
   deleteModuleMeta: (id) => req('DELETE', `/modules/${id}`),
@@ -704,17 +727,11 @@ export const api = {
 
   // Lookup pickers — searching a module by name, and resolving stored ids
   // back to names so a record never shows "Customer: 47".
-  lookupSearch: (module, q, limit) => req('GET', `/search/lookup/${module}` + qs({ q, limit })),
+  lookupSearch: (module, q, limit, narrow = null) => req('GET', `/search/lookup/${module}` + qs({ q, limit, ...Object.fromEntries(Object.entries(narrow || {}).map(([k, v]) => (k === '' ? ['open', '1'] : [`f_${k}`, v]))) })),
   lookupResolve: (module, ids) => req('GET', `/search/lookup/${module}` + qs({ ids: ids.join(',') })),
   // addresses (v1.3.2): suggestions while typing, and the address of where I am
   addressSearch: (q, near = {}) => req('GET', '/address/search' + qs({ q, lat: near.lat, lng: near.lng })),
   addressReverse: (lat, lng) => req('GET', '/address/reverse' + qs({ lat, lng })),
-  visitAddresses: (id) => req('GET', `/sfa/visits/${id}/addresses`),
-
-  // Sales documents — proforma invoices and invoices share one router, so
-  // `base` is '/proforma-invoices' or '/invoices' (and '/quotations', which
-  // supports the same PDF, preview and convert actions).
-  documentLineage: (moduleApiName, id) => req('GET', `/${moduleApiName}/${id}/lineage`),
   convertDocument: (base, id, target) => req('POST', `${base}/${id}/convert/${target}`, {}),
   sendDocument: (base, id, body) => req('POST', `${base}/${id}/send`, body),
   documentSummary: (base) => req('GET', `${base}/summary/stats`),
@@ -724,49 +741,18 @@ export const api = {
   documentPdfBlob: async (base, id, templateId) => {
     const token = localStorage.getItem('cd_token');
     const res = await fetch(`${BASE}${base}/${id}/preview${templateId ? `?template_id=${templateId}` : ''}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: authHeaders(token),
     });
     if (!res.ok) throw new Error(`Could not build the document (${res.status})`);
     return res.blob();
   },
 
-  recordInvoicePayment: (invoiceId, body) => req('POST', `/invoices/${invoiceId}/payments`, body),
-  updateInvoicePayment: (invoiceId, paymentId, body) => req('PUT', `/invoices/${invoiceId}/payments/${paymentId}`, body),
-  deleteInvoicePayment: (invoiceId, paymentId) => req('DELETE', `/invoices/${invoiceId}/payments/${paymentId}`),
-
   // Document templates
-  listDocumentTemplates: (params) => req('GET', '/document-templates' + qs(params)),
-  getDocumentTemplate: (id) => req('GET', `/document-templates/${id}`),
-  createDocumentTemplate: (body) => req('POST', '/document-templates', body),
-  updateDocumentTemplate: (id, body) => req('PUT', `/document-templates/${id}`, body),
-  duplicateDocumentTemplate: (id, body) => req('POST', `/document-templates/${id}/duplicate`, body || {}),
-  deleteDocumentTemplate: (id) => req('DELETE', `/document-templates/${id}`),
-  makeTemplateDefault: (id) => req('POST', `/document-templates/${id}/default`, {}),
-  restoreTemplateVersion: (id, version) => req('POST', `/document-templates/${id}/restore/${version}`, {}),
   // One search behind the attendee picker and the record selector.
   calendarPeople: (params) => req('GET', '/calendar/people' + qs(params)),
-  templateCatalog: () => req('GET', '/document-templates/catalog'),
   // The ready-made library: every template plus its config (the browser draws
   // the thumbnails from those), facets, recents and recommendations, in one
   // request rather than one per card.
-  templateLibrary: (params) => req('GET', '/document-templates/library' + qs(params)),
-  favoriteTemplate: (id) => req('POST', `/document-templates/${id}/favorite`, {}),
-  useTemplate: (id, body) => req('POST', `/document-templates/${id}/use`, body || {}),
-  templatePreviewBlob: async (body) => {
-    const token = localStorage.getItem('cd_token');
-    const res = await fetch(`${BASE}/document-templates/preview`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      let message = `Preview failed (${res.status})`;
-      try { const d = await res.json(); if (d?.error) message = d.error; } catch { /* keep status */ }
-      throw new Error(message);
-    }
-    return res.blob();
-  },
-
   // Company profile — the letterhead every document prints with
   getCompanyProfile: () => req('GET', '/company-profile'),
   updateCompanyProfile: (body) => req('PUT', '/company-profile', body),
@@ -778,28 +764,21 @@ export const api = {
 
   // Universal CRM — generic record CRUD (works for standard + custom modules)
   universalList: (module, params) => req('GET', recordsBase(module) + qs(params)),
+  // (v1.13) one page of a module's list, searched, filtered and counted on the server
+  queryList: (module, body) => ask(`${recordsBase(module)}/query`, body || {}),
   // Whole-table totals per status, for modules whose list returns only the
   // newest 200 rows (calls, meetings, tasks, notes, emails).
   statusCounts: (module, params) => req('GET', `${recordsBase(module)}/status-counts${qs(params)}`),
 
-  // Subscriptions / AMC — schedule, renewal cycles and history
-  listSubscriptions: (params) => req('GET', '/subscriptions' + qs(params)),
-  subscriptionSchedule: (id) => req('GET', `/subscriptions/${id}/schedule`),
-  previewSubscription: (body) => req('POST', '/subscriptions/preview', body),
-  createSubscription: (body) => req('POST', '/subscriptions', body),
-  renewSubscription: (id, body) => req('POST', `/subscriptions/${id}/renew`, body),
   universalGet: (module, id) => req('GET', `${recordsBase(module)}/${id}`),
   universalCreate: (module, body) => (DUPLICATE_CHECKED.has(module.api_name)
     ? createChecked(recordsBase(module), body)
     : req('POST', recordsBase(module), body)),
   universalUpdate: (module, id, body) => req('PUT', `${recordsBase(module)}/${id}`, body),
   universalDelete: (module, id) => req('DELETE', `${recordsBase(module)}/${id}`),
-
-  // Product photos (one per product; sized in the browser, see utils/productPhoto.js)
-  productImageRules: () => req('GET', '/products/image-rules'),
-  getProductImage: (id) => req('GET', `/products/${id}/image`),
-  saveProductImage: (id, body) => req('PUT', `/products/${id}/image`, body),
-  removeProductImage: (id) => req('DELETE', `/products/${id}/image`),
+  // (v1.8) the extra email addresses of a record (the main one stays in its `email` field)
+  recordEmails: (moduleApiName, id) => req('GET', `/record-emails/${moduleApiName}/${id}`),
+  saveRecordEmails: (moduleApiName, id, emails, primary) => req('PUT', `/record-emails/${moduleApiName}/${id}`, { emails, primary }),
 
   // Custom fields on a STANDARD module's record (EAV values, separate from
   // the record's real columns) — only meaningful when module.table_name is
@@ -812,9 +791,6 @@ export const api = {
   listRelated: (moduleApiName, recordId) => req('GET', `/relationships/${moduleApiName}/${recordId}`),
   linkRecords: (body) => req('POST', '/relationships', body),
   unlinkRecords: (body) => req('DELETE', '/relationships', body),
-  kanban: (moduleApiName) => req('GET', `/${moduleApiName}/kanban`),
-  moveOpportunityStage: (id, stageId) => req('PUT', `/opportunities/${id}/stage`, { stage_id: stageId }),
-
   // Universal CRM — global search across every enabled module the user can view
   globalSearch: (q, limit) => req('GET', `/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ''}`),
 
@@ -845,19 +821,6 @@ export const api = {
   workflowTemplate: (key) => req('GET', `/workflows/templates/${key}`),
   useWorkflowTemplate: (key, active = true) => req('POST', `/workflows/templates/${key}/use`, { active }),
   useWorkflowTemplates: (body) => req('POST', '/workflows/templates/use', body || {}),
-
-  // Universal CRM — Pipeline Builder
-  // Universal CRM — Pipeline Builder
-  listPipelines: (moduleApiName) => req('GET', '/pipelines' + (moduleApiName ? `?module=${moduleApiName}` : '')),
-  getPipeline: (id) => req('GET', `/pipelines/${id}`),
-  createPipeline: (body) => req('POST', '/pipelines', body),
-  updatePipeline: (id, body) => req('PUT', `/pipelines/${id}`, body),
-  deletePipeline: (id) => req('DELETE', `/pipelines/${id}`),
-
-  // Universal CRM — quotation PDF + send
-  downloadQuotationPdf: (id, institute) => downloadFile(`/quotations/${id}/pdf?institute=${institute || 'A'}`, `quotation-${id}.pdf`),
-  openQuotationPdf: (id, institute) => openFileInTab(`/quotations/${id}/pdf?institute=${institute || 'A'}`),
-  sendQuotation: (id, body) => req('POST', `/quotations/${id}/send`, body),
 
   // Universal CRM — Audit log + Import/Export
   listAudit: (params) => req('GET', '/admin/audit' + qs(params)),
@@ -891,9 +854,7 @@ export const api = {
     }),
 
   // Customer 360 + scoring
-  customer360: (accountId) => req('GET', `/c360/accounts/${accountId}`),
-  accountScore: (accountId) => req('GET', `/c360/accounts/${accountId}/score`),
-  leadScore: (leadId) => req('GET', `/c360/leads/${leadId}/score`),
+  leadScore: (leadId) => req('GET', `/leads/${leadId}/score`),
   // Email campaigns
   listCampaigns: () => req('GET', '/email-campaigns'),
   getCampaign: (id) => req('GET', `/email-campaigns/${id}`),
@@ -924,15 +885,16 @@ export const api = {
   // right now and from which address; `sendNewEmail` sends it (multipart when
   // there are attachments) and files a copy under the record it belongs to.
   composeStatus: () => req('GET', '/inbox/compose/status'),
-  sendNewEmail: async ({ to, cc, bcc, subject, html, body, related_module: relatedModule, related_record_id: relatedId, files = [] }) => {
-    const fields = { to, cc, bcc, subject, html, body, related_module: relatedModule, related_record_id: relatedId };
+  sendNewEmail: async ({ to, cc, bcc, subject, html, body, related_module: relatedModule, related_record_id: relatedId, files = [], template_file_ids: templateFileIds = [] }) => {
+    const fields = { to, cc, bcc, subject, html, body, related_module: relatedModule, related_record_id: relatedId,
+      template_file_ids: templateFileIds.length ? templateFileIds.join(',') : undefined };
     if (!files.length) return req('POST', '/inbox/send', fields);
     const token = localStorage.getItem('cd_token');
     const fd = new FormData();
     Object.entries(fields).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') fd.append(k, v); });
     for (const f of files) fd.append('attachments', f);
     const res = await fetch(`${BASE}/inbox/send`, {
-      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd,
+      method: 'POST', headers: authHeaders(token), body: fd,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -961,137 +923,60 @@ export const api = {
   listWaQuickTemplates: () => req('GET', '/wa-quick-templates'),
   createWaQuickTemplate: (body) => req('POST', '/wa-quick-templates', body),
 
+  // (v1.12) message templates — 'whatsapp' | 'email' — with the files they carry
+  messageTemplateRights: () => req('GET', '/message-templates/rights/me'),
+  listMessageTemplates: (channel) => req('GET', `/message-templates/${channel}`),
+  createMessageTemplate: (channel, body) => req('POST', `/message-templates/${channel}`, body),
+  updateMessageTemplate: (channel, id, body) => req('PUT', `/message-templates/${channel}/${id}`, body),
+  deleteMessageTemplate: (channel, id) => req('DELETE', `/message-templates/${channel}/${id}`),
+  removeMessageTemplateFile: (channel, id, fileId) => req('DELETE', `/message-templates/${channel}/${id}/files/${fileId}`),
+  addMessageTemplateFiles: async (channel, id, files) => {
+    const token = localStorage.getItem('cd_token');
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f);
+    const res = await fetch(`${BASE}/message-templates/${channel}/${id}/files`, {
+      method: 'POST', headers: authHeaders(token), body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || `The file could not be added (${res.status})`), { status: res.status });
+    return data;
+  },
+  logWhatsApp: (body) => req('POST', '/message-templates/whatsapp-log', body),
+  // one record of any module, for the template fields ({{first_name}}, {{company_name}}…); null when it cannot be read
+  anyRecord: async (module, id) => {
+    if (!module || !id) return null;
+    try { return await req('GET', `/${module}/${id}`); } catch { /* not a module with its own route */ }
+    try { return await req('GET', `/records/${module}/${id}`); } catch { return null; }
+  },
+
   addNote: (relatedModule, relatedRecordId, body) =>
     req('POST', '/notes', { body, related_module: relatedModule, related_record_id: relatedRecordId }),
-  aiCustomerSummary: (accountId, question) => req('POST', `/c360/accounts/${accountId}/ai-summary`, { question }),
-
   // Dispose (call response + disposition + next action) and call analytics
   disposeCall: (body) => req('POST', '/calls/dispose', body),
 
-  // ---- Telephony (MCube IVR) ------------------------------------------------
-  // (the "ask" ones start or steer a call; they change no record, so they do
-  // not make the screens forget what they have loaded)
-  telephonyStatus: () => req('GET', '/telephony/status'),
-  telephonyLive: () => req('GET', '/telephony/live'),
-  telephonyCall: (body) => ask('/telephony/call', body),
-  telephonyNumbersOf: (module, id) => req('GET', `/telephony/numbers-of${qs({ module, record_id: id })}`),
-  telephonyDismiss: (id) => ask(`/telephony/sessions/${id}/dismiss`, {}),
-  telephonyPending: (module, id) => req('GET', `/telephony/pending${qs({ module, record_id: id })}`),
-  telephonyAgentsDirectory: () => req('GET', '/telephony/agents-directory'),
-  telephonySettings: () => req('GET', '/telephony/settings'),
-  saveTelephonySettings: (body) => req('PUT', '/telephony/settings', body),
-  saveTelephonyAgents: (agents) => req('PUT', '/telephony/agents', { agents }),
-  saveTelephonyNumber: (body, id) => req(id ? 'PUT' : 'POST', id ? `/telephony/numbers/${id}` : '/telephony/numbers', body),
-  deleteTelephonyNumber: (id) => req('DELETE', `/telephony/numbers/${id}`),
-  newTelephonyHookKey: () => req('POST', '/telephony/hook-key', {}),
-  telephonyTestCall: (number) => ask('/telephony/test-call', { number }),
-  telephonyTestHook: (body) => ask('/telephony/test-hook', body),
-  telephonyEvents: () => req('GET', '/telephony/events'),
-  replayTelephonyEvent: (id) => req('POST', `/telephony/events/${id}/replay`, {}),
-  dialLists: () => req('GET', '/telephony/dialer'),
-  createDialList: (body) => req('POST', '/telephony/dialer', body),
-  dialList: (id) => req('GET', `/telephony/dialer/${id}`),
-  dialNext: (id, force = false) => ask(`/telephony/dialer/${id}/next`, force ? { force: true } : {}),
-  dialSkip: (id, itemId) => ask(`/telephony/dialer/${id}/skip`, { item_id: itemId }),
-  dialPause: (id) => ask(`/telephony/dialer/${id}/pause`, {}),
-  dialResume: (id) => ask(`/telephony/dialer/${id}/resume`, {}),
-  dialRetry: (id) => ask(`/telephony/dialer/${id}/retry`, {}),
-  deleteDialList: (id) => req('DELETE', `/telephony/dialer/${id}`),
-  liveCalls: () => req('GET', '/telephony/live-calls'),
-  liveCallAction: (id, body) => ask(`/telephony/live-calls/${id}/action`, body),
-
-  // Field force (SFA): attendance, routes, visits — the web side of the mobile app
+  // Staff app: its settings, leave and phone alerts — the web side of the mobile app
   fieldMeta: () => req('GET', '/sfa/meta'),
   fieldLive: () => req('GET', '/sfa/live'),
   fieldPeople: () => req('GET', '/sfa/people'),
   fieldTrail: (params) => req('GET', `/sfa/trail${qs(params)}`),
   fieldRegister: (params) => req('GET', `/sfa/register${qs(params)}`),
   downloadFieldRegister: (params) => downloadFile(`/sfa/register${qs({ ...params, format: 'csv' })}`, `attendance-${params.from}-to-${params.to}.csv`),
-  fieldVisits: (params) => req('GET', `/sfa/visits${qs(params)}`),
-  fieldVisit: (id) => req('GET', `/sfa/visits/${id}`),
   fieldFile: (id, thumb) => fetchBlob(`/sfa/files/${id}${thumb ? '?thumb=1' : ''}`),
-  fieldPlace: (module, id) => req('GET', `/sfa/places/${module}/${id}`),
-  saveFieldPlace: (module, id, body) => req('PUT', `/sfa/places/${module}/${id}`, body),
-  clearFieldPlace: (module, id) => req('DELETE', `/sfa/places/${module}/${id}`),
-  geocodeFieldPlace: (module, id) => req('POST', `/sfa/places/${module}/${id}/geocode`, {}),
   fieldSettings: () => req('GET', '/sfa/settings'),
   saveFieldSettings: (body) => req('PUT', '/sfa/settings', body),
+  // (v1.4) whose data a list shows (a person, a team, a role); phone alerts (the Firebase key)
+  viewingOptions: () => req('GET', '/sfa/m/viewing'),
+  pushSettings: () => req('GET', '/sfa/push/settings'),
+  savePushKey: (key) => req('PUT', '/sfa/push/settings', { key }),
+  testPush: () => req('POST', '/sfa/push/test', {}),
   callRecording: (callId) => req('GET', `/sfa/calls/${callId}/recording`),
   transcribeCall: (callId) => req('POST', `/sfa/calls/${callId}/transcribe`, {}),
   // (v1.3) visit plans, leave, meeting recordings
-  fieldTeamPlans: (params) => req('GET', `/sfa/plans/team${qs(params)}`),
-  fieldMyPlans: (params) => req('GET', `/sfa/plans/mine${qs(params)}`),
-  fieldPlan: (id) => req('GET', `/sfa/plans/${id}`),
-  decideFieldPlan: (id, body) => req('POST', `/sfa/plans/${id}/decide`, body),
-  fieldPlanReport: (params) => req('GET', `/sfa/plans/report${qs(params)}`),
-  downloadFieldPlanReport: (params) => downloadFile(`/sfa/plans/report${qs({ ...params, format: 'csv' })}`, `plan-vs-actual-${params.from}-to-${params.to}.csv`),
   fieldTeamLeaves: (params) => req('GET', `/sfa/leaves/team${qs(params)}`),
   fieldMyLeaves: () => req('GET', '/sfa/leaves/mine'),
   applyFieldLeave: (body) => req('POST', '/sfa/leaves', body),
   cancelFieldLeave: (id) => req('POST', `/sfa/leaves/${id}/cancel`, {}),
   decideFieldLeave: (id, body) => req('POST', `/sfa/leaves/${id}/decide`, body),
-  visitRecording: (id) => req('GET', `/sfa/visits/${id}/recording`),
-  transcribeVisit: (id) => req('POST', `/sfa/visits/${id}/recording/transcribe`, {}),
-
-  // Expense management: expenses with bills, claims, approvals, advances, payment
-  expenseMeta: () => req('GET', '/expenses/meta'),
-  expenseSummary: () => req('GET', '/expenses/summary'),
-  expensePeople: () => req('GET', '/expenses/people'),
-  expenses: (params) => req('GET', `/expenses${qs(params)}`),
-  expense: (id) => req('GET', `/expenses/${id}`),
-  saveExpense: (body, id) => req(id ? 'PUT' : 'POST', id ? `/expenses/${id}` : '/expenses', body),
-  deleteExpense: (id) => req('DELETE', `/expenses/${id}`),
-  checkExpense: (body) => ask('/expenses/check', body),
-  deleteExpenseBill: (rid) => req('DELETE', `/expenses/receipts/${rid}`),
-  expenseBill: (rid, thumb) => fetchBlob(`/expenses/receipts/${rid}${thumb ? '?thumb=1' : ''}`),
-  expenseClaims: (params) => req('GET', `/expenses/claims${qs(params)}`),
-  expenseClaim: (id) => req('GET', `/expenses/claims/${id}`),
-  createExpenseClaim: (body) => req('POST', '/expenses/claims', body),
-  updateExpenseClaim: (id, body) => req('PUT', `/expenses/claims/${id}`, body),
-  deleteExpenseClaim: (id) => req('DELETE', `/expenses/claims/${id}`),
-  // action: submit | withdraw | approve | reject | return | reassign | correct
-  expenseClaimAction: (id, action, body) => req('POST', `/expenses/claims/${id}/${action}`, body || {}),
-  expenseApprovals: (params) => req('GET', `/expenses/approvals${qs(params)}`),
-  expensePayable: () => req('GET', '/expenses/finance/payable'),
-  payExpenseClaims: (body) => req('POST', '/expenses/finance/pay', body),
-  expensePayouts: (params) => req('GET', `/expenses/finance/payouts${qs(params)}`),
-  expensePayout: (id) => req('GET', `/expenses/finance/payouts/${id}`),
-  expenseAdvances: (params) => req('GET', `/expenses/advances${qs(params)}`),
-  expenseAdvance: (id) => req('GET', `/expenses/advances/${id}`),
-  createExpenseAdvance: (body) => req('POST', '/expenses/advances', body),
-  // action: approve | reject | cancel | pay | return
-  expenseAdvanceAction: (id, action, body) => req('POST', `/expenses/advances/${id}/${action}`, body || {}),
-  expenseReport: (name, params) => req('GET', `/expenses/reports/${name}${qs(params)}`),
-  downloadExpenseReport: (name, params) => downloadFile(`/expenses/reports/${name}${qs({ ...params, format: 'csv' })}`, `expenses-${name}${params && params.from && params.to ? `-${params.from}-to-${params.to}` : ''}.csv`),
-  expenseSettings: () => req('GET', '/expenses/settings'),
-  saveExpenseSettings: (body) => req('PUT', '/expenses/settings', body),
-  saveExpenseCategory: (body, id) => req(id ? 'PUT' : 'POST', id ? `/expenses/categories/${id}` : '/expenses/categories', body),
-  deleteExpenseCategory: (id) => req('DELETE', `/expenses/categories/${id}`),
-  orderExpenseCategories: (ids) => req('PUT', '/expenses/categories-order', { ids }),
-  saveExpenseVehicleRates: (rates) => req('PUT', '/expenses/vehicle-rates', { rates }),
-  // reading a bill: { text } read on this device, or { image: { mime, data } } for the assistant
-  readExpenseBill: (body) => ask('/expenses/bill-reading', body),
-  // bank details and payments through the bank
-  myExpenseBank: () => req('GET', '/expenses/bank/me'),
-  saveMyExpenseBank: (body) => req('PUT', '/expenses/bank/me', body),
-  expenseBankPeople: (params) => req('GET', `/expenses/bank/people${qs(params)}`),
-  saveExpenseBankPerson: (userId, body) => req('PUT', `/expenses/bank/people/${userId}`, body),
-  verifyExpenseBankPerson: (userId, body) => req('POST', `/expenses/bank/people/${userId}/verify`, body || {}),
-  expenseBankBatches: (params) => req('GET', `/expenses/bank/batches${qs(params)}`),
-  expenseBankBatch: (id) => req('GET', `/expenses/bank/batches/${id}`),
-  makeExpenseBankBatch: (body) => req('POST', '/expenses/bank/batches', body),
-  expenseBankBatchAction: (id, action, body) => req('POST', `/expenses/bank/batches/${id}/${action}`, body || {}),
-  expenseBankLineReturned: (id, lineId, body) => req('POST', `/expenses/bank/batches/${id}/lines/${lineId}/returned`, body || {}),
-  downloadExpenseBankFile: (id, name, again) => downloadFile(`/expenses/bank/batches/${id}/file${again ? '?again=1' : ''}`, name || 'bank-file.csv'),
-  // Tally
-  expenseTallyPreview: (params) => req('GET', `/expenses/tally/preview${qs(params)}`),
-  expenseTallyExports: (params) => req('GET', `/expenses/tally/exports${qs(params)}`),
-  expenseTallyExport: (id) => req('GET', `/expenses/tally/exports/${id}`),
-  makeExpenseTallyExport: (body) => req('POST', '/expenses/tally/exports', body),
-  undoExpenseTallyExport: (id) => req('POST', `/expenses/tally/exports/${id}/undo`, { confirm: true }),
-  downloadExpenseTallyFile: (id, name) => downloadFile(`/expenses/tally/exports/${id}/file`, name || 'tally.xml'),
-  downloadExpenseTallyLedgers: () => downloadFile('/expenses/tally/ledgers-file', 'expense-ledgers.xml'),
-
   // Follow-ups: exact date + time, lifecycle, reminders
   followUpsFor: (module, recordId) => req('GET', `/follow-ups${qs({ module, record_id: recordId })}`),
   myFollowUps: (limit) => req('GET', `/follow-ups/mine${qs({ limit })}`),
@@ -1143,7 +1028,7 @@ export const api = {
     // Multipart — can't go through req(), which sets a JSON content-type.
     const res = await fetch(`${BASE}/documents`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${localStorage.getItem('cd_token')}` },
+      headers: authHeaders(localStorage.getItem('cd_token')),
       body: formData,
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Upload failed');
@@ -1176,7 +1061,7 @@ export const api = {
     body.append('file', file);
     const res = await fetch(`${BASE}/backup/restore`, {
       method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: authHeaders(token),
       body,
     });
     const data = await res.json().catch(() => ({}));
@@ -1223,7 +1108,7 @@ export const api = {
   chatAttachmentBlob: async (id) => {
     const token = localStorage.getItem('cd_token');
     const res = await fetch(`${BASE}/chat/attachments/${id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: authHeaders(token),
     });
     if (!res.ok) {
       let message = `Could not open the file (${res.status})`;
@@ -1256,7 +1141,7 @@ export const api = {
     if (ref?.module) { fd.append('ref_module', ref.module); fd.append('ref_record_id', ref.record_id); fd.append('ref_label', ref.label || ''); }
     for (const f of files) fd.append('files', f);
     const res = await fetch(`${BASE}/chat/conversations/${conversationId}/messages`, {
-      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd,
+      method: 'POST', headers: authHeaders(token), body: fd,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Send failed (${res.status})`);
@@ -1271,7 +1156,7 @@ export const api = {
     if (body) fd.append('body', body);
     for (const f of files) fd.append('files', f);
     const res = await fetch(`${BASE}/chat/broadcast`, {
-      method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd,
+      method: 'POST', headers: authHeaders(token), body: fd,
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Broadcast failed (${res.status})`);

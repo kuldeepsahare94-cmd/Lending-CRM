@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
-import { ArrowLeft, Trash2, Pencil, Send, MessageCircle, Sparkles, CheckSquare, FileText, Download, Paperclip, Upload, PhoneCall, Phone, CalendarPlus, StickyNote, Building2, Mail, ReceiptText } from 'lucide-react';
+import { ArrowLeft, Trash2, Pencil, Send, MessageCircle, Sparkles, CheckSquare, FileText, Download, Paperclip, Upload, PhoneCall, CalendarPlus, StickyNote, Mail } from 'lucide-react';
 import { api } from '../../api';
 import NoAccess from '../../components/NoAccess';
 import { usePermissions } from '../../context/usePermissions';
 import StatusBadge from '../../components/StatusBadge';
 import { friendlyError } from '../../components/ui';
-import { getFieldValue, formatFieldValue, renderFieldValue, FieldInput, recordTitle, fieldLabel } from './fieldUtils';
-
+import { getFieldValue, formatFieldValue, renderFieldValue, recordTitle, fieldLabel } from './fieldUtils';
 import { computeFollowupStatus, findFollowupField } from './followupUtils';
 import AddRelatedModal, { canCreateRelation, relationTargetModule } from './AddRelatedModal';
 import ScheduleMeetingModal from '../../components/ScheduleMeetingModal';
@@ -19,36 +18,37 @@ import { avatarGradientFor, initialsOf } from '../../theme/avatarColors';
 import OutcomeModal from '../../components/followup/OutcomeModal';
 import FollowUpCard from '../../components/followup/FollowUpCard';
 import { userName } from '../../components/userDirectory';
-import DocumentItemsPanel from './DocumentItemsPanel';
-import { ProductPhotoPanel, ProductThumb } from '../../components/ProductPhoto';
-import DocumentActionsPanel from './DocumentActionsPanel';
-import FieldVisitsPanel from '../../components/field/FieldVisitsPanel';
 import { CallFactsPanel } from '../../components/calls/CallRecording';
-import DocumentPaymentsPanel from './DocumentPaymentsPanel';
-import SubscriptionPanels, { CustomerSubscriptions } from './SubscriptionPanels';
+import CourseSubjectsPanel from '../../components/institute/CourseSubjectsPanel';
+import StudentPanel from '../../components/institute/StudentPanel';
+import FeesPanel from '../../components/institute/FeesPanel';
+import StudentAttendancePanel from '../../components/institute/StudentAttendancePanel';
+import StudentHero from '../../components/institute/StudentHero';
+import CertificatesPanel from '../../components/institute/CertificatesPanel';
+import BranchLetterheadPanel from '../../components/institute/BranchLetterheadPanel';
+import AccountRecordPanel from '../../components/institute/AccountRecordPanel';
+import FeeRecordPanel from '../../components/institute/FeeRecordPanel';
+import { AdvancePanel } from '../../components/institute/payrollUi';
+
+const ACADEMIC_MASTERS = new Set(['branches', 'academic_years', 'courses', 'subjects', 'batches']);
 import AssignPicker from '../../components/AssignPicker';
-import { TicketSupportPanel, IncidentPanel, ProblemPanel } from '../support/SupportRecordPanels';
 import { USER_TYPES } from './fieldUtils';
 import DetailSkeleton from '../../components/DetailSkeleton';
 import { remember, recall } from '../../screenMemory';
 import { openCompose } from '../../components/EmailCompose';
+import { ExtraEmails, useRecordEmails } from '../../components/EmailsField';
 import RecordEmails from '../../components/RecordEmails';
-import { SimilarBanner } from '../../components/DuplicateDialog';
-import { useCallAction } from '../../components/telephony/CallButton';
-import { useExpenseMeta, askAddExpense } from '../../components/expenses/expenses';
+
+const READ_ONLY_MODULES = new Set(['fee_receipts', 'fee_installments', 'vouchers', 'expenses', 'payroll_runs', 'staff_advances']);
 
 // Records that email is exchanged about. They get an Emails tab even before
 // the first message; any other record gets one once it has an address.
-const EMAIL_TAB_MODULES = new Set(['contacts', 'accounts', 'opportunities', 'tickets', 'quotations', 'proforma_invoices', 'invoices', 'subscriptions']);
+const EMAIL_TAB_MODULES = new Set(['students']);
 
-// Modules whose records are sales documents: line items, a PDF, a place in a
-// conversion chain.
-const SALES_DOCUMENT_MODULES = new Set(['quotations', 'proforma_invoices', 'invoices']);
 
 // Any array-of-objects the dedicated module route embeds in its detail
-// response (e.g. Accounts embeds contacts/opportunities/quotations/...) is
+// response (e.g. a Course embeds its batches and subjects) is
 // rendered as its own tab automatically — no per-module wiring needed.
-// Ticket replies render in the Support panel's conversation, not as a tab.
 const NON_RELATION_ARRAY_KEYS = new Set(['replies']);
 
 // Follow-up Timer (master prompt section 11) shares its field-detection and
@@ -58,7 +58,7 @@ const NON_RELATION_ARRAY_KEYS = new Set(['replies']);
 // (matches the modules Phase 8's fireEvent wiring and inboundHandler's
 // matchEntity() cover) — everything else skips the WhatsApp tab entirely
 // rather than showing an always-empty one.
-const WHATSAPP_CAPABLE_MODULES = new Set(['accounts', 'contacts', 'opportunities', 'tickets']);
+const WHATSAPP_CAPABLE_MODULES = new Set(['students']);
 
 
 // Subpanel columns were "the first six keys of the row object", which is
@@ -74,10 +74,10 @@ const SUBPANEL_SKIP = /^(id|.*_id|created_at|updated_at|created_by|owner_id|rela
 function subpanelColumns(row) {
   const keys = Object.keys(row).filter((k) => !SUBPANEL_SKIP.test(k));
   // Fields most worth seeing first, when present.
-  const preferred = ['first_name', 'last_name', 'account_name', 'full_name', 'name', 'title',
-    'subject', 'quote_number', 'opportunity_name', 'meeting_title', 'task_title', 'call_subject',
-    'plan', 'status', 'stage_name', 'priority', 'amount', 'grand_total', 'recurring_amount',
-    'quote_date', 'due_date', 'start_datetime', 'job_title', 'email', 'mobile', 'phone', 'body'];
+  const preferred = ['student_name', 'full_name', 'batch_name', 'subject_name', 'course_name', 'name', 'title',
+    'subject', 'batch_code', 'subject_code', 'meeting_title', 'task_title', 'call_subject',
+    'status', 'priority', 'start_date', 'end_date', 'start_time', 'end_time', 'capacity',
+    'due_date', 'start_datetime', 'email', 'mobile', 'phone', 'body'];
   const ranked = [...keys].sort((a, b) => {
     const ia = preferred.indexOf(a), ib = preferred.indexOf(b);
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
@@ -106,30 +106,15 @@ function relationRecordPath(relationKey, rowId) {
 // exist on this module rather than a hardcoded per-module list — so a
 // contact shows its phone, a ticket shows its requester, and a module
 // added later gets the same treatment with no code change.
-// Falls back to the linked account/contact when the record itself has no
-// phone or email — which is the normal case for opportunities, quotations
-// and subscriptions. Labelled with whose number it is, so you know you're
-// calling the contact rather than a main switchboard.
-function linkedComms(record) {
-  const contactName = [record.contact_first_name, record.contact_last_name].filter(Boolean).join(' ').trim();
-  return {
-    company: record.account_name || null,
-    contactName: contactName || null,
-    contactRole: record.contact_job_title || null,
-    phone: record.contact_phone || record.account_phone || null,
-    phoneOwner: record.contact_phone ? (contactName || 'contact') : (record.account_name || 'account'),
-    email: record.contact_email || record.account_email || null,
-    emailOwner: record.contact_email ? (contactName || 'contact') : (record.account_name || 'account'),
-    accountId: record.account_id || null,
-  };
-}
-
 function heroSummary(record, fields) {
   const byType = (t) => fields.find((f) => f.field_type === t);
   const byName = (re) => fields.find((f) => re.test(f.api_name));
 
-  const phoneField = byType('phone') || byName(/^(phone|mobile)$/i);
-  const emailField = byType('email') || byName(/^email$/i);
+  // the record's own number first (a student's mobile, not the father's); else
+  // the first phone or email that has a value
+  const filled = (f) => { const v = getFieldValue(record, f); return v !== null && v !== undefined && String(v).trim() !== ''; };
+  const phoneField = [byName(/^(phone|mobile)$/i), ...fields.filter((f) => f.field_type === 'phone')].find((f) => f && filled(f)) || byType('phone');
+  const emailField = [byName(/^email$/i), ...fields.filter((f) => f.field_type === 'email')].find((f) => f && filled(f)) || byType('email');
   const locField = byName(/^(city|location|address|billing_city)$/i);
 
   const val = (f) => (f ? getFieldValue(record, f) : null);
@@ -152,17 +137,15 @@ function heroSummary(record, fields) {
 // already returned. No extra request, and it can't disagree with the tabs
 // because it is literally the same data.
 const HERO_COUNT_KEYS = [
-  { key: 'contacts', label: 'Contacts' },
-  { key: 'opportunities', label: 'Deals' },
-  { key: 'quotations', label: 'Quotes' },
-  { key: 'tickets', label: 'Tickets' },
-  { key: 'subscriptions', label: 'Subscriptions' },
+  { key: 'batches', label: 'Batches' },
+  { key: 'subjects', label: 'Subjects' },
+  { key: 'students', label: 'Students' },
 ];
 
 function heroCounts(record) {
   return HERO_COUNT_KEYS
     .filter(({ key }) => Array.isArray(record[key]) && record[key].length > 0)
-    .map(({ key, label }) => ({ label, value: record[key].length }))
+    .map(({ key, label }) => ({ key, label, value: record[key].length }))
     .slice(0, 4);
 }
 
@@ -172,15 +155,13 @@ function heroCounts(record) {
 // coloured shadow in the same hue, which lifts the box off the card
 // without needing a heavy border.
 const COUNT_STYLES = {
-  Contacts: { from: '#2DD4BF', to: '#0F766E', glow: 'rgba(13,148,136,0.35)' },
-  Deals: { from: '#FBBF24', to: '#B45309', glow: 'rgba(217,119,6,0.35)' },
-  Quotes: { from: '#22D3EE', to: '#0E7490', glow: 'rgba(8,145,178,0.35)' },
-  Tickets: { from: '#FB7185', to: '#BE123C', glow: 'rgba(225,29,72,0.35)' },
-  Subscriptions: { from: '#34D399', to: '#047857', glow: 'rgba(5,150,105,0.35)' },
+  Batches: { from: '#FBBF24', to: '#B45309', glow: 'rgba(217,119,6,0.35)' },
+  Subjects: { from: '#2DD4BF', to: '#0F766E', glow: 'rgba(13,148,136,0.35)' },
+  Students: { from: '#34D399', to: '#047857', glow: 'rgba(5,150,105,0.35)' },
 };
 
 function CountBox({ label, value, onClick }) {
-  const st = COUNT_STYLES[label] || COUNT_STYLES.Contacts;
+  const st = COUNT_STYLES[label] || COUNT_STYLES.Batches;
   return (
     <button onClick={onClick}
       className="rounded-xl px-3 py-2 text-center text-white transition-transform hover:-translate-y-0.5 shrink-0"
@@ -190,36 +171,6 @@ function CountBox({ label, value, onClick }) {
     </button>
   );
 }
-
-// Compact score ring. Colour follows the band, not a fixed brand colour —
-// "At Risk" reading green would be actively misleading.
-const BAND_COLOUR = (band) => (
-  /excellent|healthy|good/i.test(band) ? 'var(--color-success)'
-    : /needs attention|fair|warm/i.test(band) ? 'var(--color-warning)'
-      : 'var(--color-danger)'
-);
-
-function MiniScoreRing({ score, band, label }) {
-  const r = 20, c = 2 * Math.PI * r, pct = Math.max(0, Math.min(100, score || 0));
-  const colour = BAND_COLOUR(band);
-  return (
-    <div className="flex items-center gap-2 shrink-0">
-      <div className="relative" style={{ width: 48, height: 48 }}>
-        <svg width={48} height={48} className="-rotate-90">
-          <circle cx={24} cy={24} r={r} fill="none" stroke="var(--color-line)" strokeWidth={5} />
-          <circle cx={24} cy={24} r={r} fill="none" stroke={colour} strokeWidth={5}
-            strokeDasharray={c} strokeDashoffset={c - (pct / 100) * c} strokeLinecap="round" />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-ink">{score}</div>
-      </div>
-      <div className="leading-tight">
-        <div className="text-[10px] text-slate-500">{label}</div>
-        <div className="text-xs font-semibold" style={{ color: colour }}>{band}</div>
-      </div>
-    </div>
-  );
-}
-
 
 // Tab labels come straight from relation keys, which are raw API names —
 // so the bar reads "stageHistory" and "whatsapp" rather than "Stage
@@ -243,9 +194,10 @@ function tabLabel(key) {
 function DetailRow({ label, value }) {
   const empty = value === null || value === undefined || value === '';
   return (
-    <div className="flex items-start justify-between gap-3 py-2 border-b border-line/50 last:border-0">
-      <dt className="text-xs text-slate-500 font-medium shrink-0 pt-0.5">{label}</dt>
-      <dd className={`text-sm text-right break-words ${empty ? 'text-slate-300' : 'text-ink'}`}>
+    // (v1.9) the value sits next to its label (not pushed to the far edge of a wide card)
+    <div className="grid grid-cols-[minmax(6.5rem,11rem)_1fr] items-baseline gap-4 py-2 border-b border-line/50 last:border-0">
+      <dt className="text-xs text-slate-500 font-medium">{label}</dt>
+      <dd className={`text-sm break-words min-w-0 ${empty ? 'text-slate-300' : 'text-ink'}`}>
         {empty ? '—' : value}
       </dd>
     </div>
@@ -260,7 +212,7 @@ function DetailRow({ label, value }) {
 // reminder (the follow-up card). Other modules that only have a due/renewal
 // DATE keep the simple date panel below, unchanged.
 const REAL_FOLLOWUP_FIELDS = ['follow_up_date', 'next_followup', 'next_activity_at'];
-const FOLLOWUP_MODULES = new Set(['accounts', 'contacts', 'opportunities']);
+const FOLLOWUP_MODULES = new Set([]);
 function usesFollowUpCard(module, fields) {
   return FOLLOWUP_MODULES.has(module.api_name) || fields.some((f) => REAL_FOLLOWUP_FIELDS.includes(f.api_name));
 }
@@ -318,16 +270,13 @@ function FollowUpPanel({ module, fields, record, onUpdated }) {
 }
 
 // Generative AI Actions (Phase 18's backend, this is the UI). Analyze fits
-// Opportunities/Tickets (risk, classification); Summarize fits Calls/
+// nothing here yet (kept for later modules); Summarize fits Calls/
 // Meetings (extract action items). Both degrade to a plain error message
 // if the backend isn't configured with an API key — same message the
 // backend itself returns, not a generic failure.
-const AI_ANALYZE_MODULES = new Set(['opportunities', 'tickets']);
+const AI_ANALYZE_MODULES = new Set([]);
 const AI_SUMMARIZE_MODULES = new Set(['calls', 'meetings']);
 
-// Quotation-only actions: download the PDF, or email it to the linked
-// contact (which also flips the quote to Sent, firing the same workflow
-// events the manual status change does).
 // Documents attached to this record — real file uploads plus link-only
 // entries (for things already living in Drive/Dropbox). Uses the same
 // polymorphic related_module/related_record_id pattern as the activity
@@ -566,7 +515,7 @@ function WhatsAppPanel({ moduleApiName, recordId }) {
   }
 
   return (
-    <div className="card mt-5 flex flex-col" style={{ maxHeight: 480 }}>
+    <div className="card mt-5 flex flex-col" style={{ maxHeight: '30rem' }}>
       <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {convo.messages.map((m) => (
           <div key={m.id} className={`flex ${m.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}>
@@ -592,7 +541,12 @@ function WhatsAppPanel({ moduleApiName, recordId }) {
 export default function UniversalDetail() {
   const { moduleApiName, id } = useParams();
   const navigate = useNavigate();
-  const can = usePermissions();
+  // (Phase 3B) a payroll opens on the Payroll page
+  useEffect(() => { if (moduleApiName === 'payroll_runs') navigate(`/payroll?run=${id}`, { replace: true }); }, [moduleApiName, id, navigate]);
+  const canRaw = usePermissions();
+  // (iCRM Institute) receipts and fee dues change only through a student's
+  // Fees panel (collect, cancel, set up fees): their lists are read-only here
+  const can = (m, a) => (READ_ONLY_MODULES.has(m) && !['view', 'export'].includes(a) ? false : canRaw(m, a));
 
   // Opening a record seen before shows it at once, then refreshes it
   // (screenMemory.js). A record opened from a list shows its name at once.
@@ -610,10 +564,19 @@ export default function UniversalDetail() {
   const [denied, setDenied] = useState(null);
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState('overview');
+  // (Phase 68) the student page opens on its own tabs; the top buttons open a form in them
+  const [collectNonce, setCollectNonce] = useState(0);
+  const [certNonce, setCertNonce] = useState(0);
+  const [heroKey, setHeroKey] = useState(0);
+  const studentTabSet = useRef('');
+  useEffect(() => {
+    if (moduleApiName !== 'students' || studentTabSet.current === String(id)) return;
+    studentTabSet.current = String(id);
+    setTab(/[?&]fees=setup\b/.test(window.location.search) ? 'fees' : 'academics');
+  }, [moduleApiName, id]);
   const [addingRelation, setAddingRelation] = useState(null);
   const [schedulingMeeting, setSchedulingMeeting] = useState(false);
   const [waOpen, setWaOpen] = useState(false);
-  const [acctScore, setAcctScore] = useState(null);
   const [loggingOutcome, setLoggingOutcome] = useState(false);
   const [openFollowUp, setOpenFollowUp] = useState(null);
   const [followUpVersion, setFollowUpVersion] = useState(0);
@@ -669,11 +632,7 @@ export default function UniversalDetail() {
   };
   useEffect(() => { setDenied(null); load(); }, [moduleApiName, id]);
 
-  // Call through the IVR (MCube) from a contact or an account; and when a call
-  // of this record ends, or is disposed from the call card, show it here.
-  const ivrCall = useCallAction(moduleApiName, id);
-  // An expense for this customer — only when expense management is on for this person.
-  const expenseMeta = useExpenseMeta();
+  // When a call of this record is disposed, show it here.
   const loadRef = useRef(load);
   loadRef.current = load;
   const ownDisposeOpen = useRef(false);
@@ -698,13 +657,6 @@ export default function UniversalDetail() {
 
   // Auto-detected related-record tabs: any top-level array-of-objects on the
   // record that isn't the field list itself.
-  // Accounts get score + health rings in the header. Fetched from the
-  // lightweight score endpoint rather than the full Customer 360 payload,
-  // which would pull 15 sections of relations to render two small rings.
-  useEffect(() => {
-    if (module?.api_name !== 'accounts' || !id) { setAcctScore(null); return; }
-    api.accountScore(id).then(setAcctScore).catch(() => setAcctScore(null));
-  }, [module?.api_name, id]);
 
   const embeddedRelations = useMemo(() => {
     if (!record) return [];
@@ -740,6 +692,9 @@ export default function UniversalDetail() {
     }
   }, [searchParams, record, editFields, editing]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // (v1.8) the record's other email addresses, shown under its main one
+  const moreEmails = useRecordEmails(module?.api_name, Number(id), record);
+
   if (loading) {
     const preview = location.state?.preview;
     return <DetailSkeleton title={preview && String(preview.id) === String(id) ? preview.title : ''} />;
@@ -762,11 +717,16 @@ export default function UniversalDetail() {
   const showWhatsApp = WHATSAPP_CAPABLE_MODULES.has(module.api_name);
   // Who an email from this record goes to: its own address, or — for a deal,
   // quotation or ticket — the contact / account it belongs to.
-  const emailTo = heroSummary(record, fields).email || linkedComms(record).email || '';
+  const emailTo = heroSummary(record, fields).email || '';
+  const mainEmailField = (fields.find((x) => x.api_name === 'email' && x.field_type === 'email') || fields.find((x) => x.field_type === 'email') || {}).api_name;
+  const valueOf = (f) => (f.api_name === mainEmailField && moreEmails.length
+    ? <>{renderFieldValue(record, f)}<ExtraEmails list={moreEmails} /></> : renderFieldValue(record, f));
   const showEmails = module.api_name !== 'emails' && !embeddedRelations.some(([k]) => k === 'emails')
     && can('emails', 'view') && (EMAIL_TAB_MODULES.has(module.api_name) || !!emailTo);
   const writeEmail = () => openCompose({ to: emailTo, name: title, module: module.api_name, recordId: Number(id) });
-  const tabs = ['overview', ...embeddedRelations.map(([k]) => k), ...(showEmails ? ['emails'] : []), ...(showWhatsApp ? ['whatsapp'] : []), 'related'];
+  const isStudent = module.api_name === 'students';
+  const tabs = [...(isStudent ? ['academics', 'fees', 'attendance', 'certificates', 'documents'] : []),
+    'overview', ...embeddedRelations.map(([k]) => k), ...(showEmails ? ['emails'] : []), ...(showWhatsApp ? ['whatsapp'] : []), 'related'];
 
   return (
     <div className="relative rounded-3xl -m-4 sm:-m-6 p-4 sm:p-6">
@@ -788,40 +748,53 @@ export default function UniversalDetail() {
         }} />
       </div>
 
-      <div className="relative z-10">
+      <div className="relative">{/* (v1.8) no z-index: it made a stacking context that kept every pop-up under the top bar */}
       <button onClick={() => navigate(`/records/${module.api_name}`)} className="text-slate-500 hover:text-ink text-sm inline-flex items-center gap-1 mb-4">
         <ArrowLeft className="w-4 h-4" /> {module.plural_label}
       </button>
 
-      {/* Another contact / account with the same mobile, email or name,
-          with a way to merge the two. Nothing is shown when there is none. */}
-      {(module.api_name === 'contacts' || module.api_name === 'accounts') && record?.id && (
-        <SimilarBanner key={`${module.api_name}:${record.id}`} module={module.api_name} recordId={record.id}
-          what={module.singular_label ? module.singular_label.toLowerCase() : 'record'} />
-      )}
-
       {/* Record header as a card with an avatar, matching Lead detail —
           it was a bare <h1> on the page background with nothing to anchor
           it, which is why it read as unfinished next to Leads. */}
+      {module.api_name === 'students' ? (
+        <StudentHero student={record} title={title} canEdit={can('students', 'edit')} canDelete={can('students', 'delete')}
+          onEdit={startEdit} onDelete={remove} onTab={setTab} onChanged={load} refreshKey={heroKey}
+          onCollect={() => { setTab('fees'); setCollectNonce((n) => n + 1); }}
+          onCertificate={() => { setTab('certificates'); setCertNonce((n) => n + 1); }}
+          assign={(() => {
+            const uf = fields.filter((f) => USER_TYPES.has(f.field_type) && f.is_system);
+            if (!uf.length) return null;
+            return (
+              <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5">
+                {uf.map((f) => (
+                  <span key={f.api_name} className="inline-flex items-center gap-1.5 text-[13px]">
+                    <span style={{ color: 'var(--color-faint)' }}>{f.label}:</span>
+                    <AssignPicker value={record[f.api_name]} mode={f.field_type === 'user_name' ? 'name' : 'id'}
+                      label={f.label} disabled={!can(module.api_name, 'edit')}
+                      onChange={async (v) => {
+                        await api.universalUpdate(module, id, { [f.api_name]: v });
+                        setRecord((r) => ({ ...r, [f.api_name]: v }));
+                      }} />
+                  </span>
+                ))}
+              </div>
+            );
+          })()} />
+      ) : (
       <div className="card p-5 relative overflow-hidden">
         <div className="absolute top-0 left-0 right-0 h-[3px]"
           style={{ background: `linear-gradient(90deg, ${accentFor(module.api_name).from}, ${accentFor(module.api_name).to})` }} />
         {/* Identity wash in this module's own accent — the hero was pure
-            white, so an opportunity, a contact and a ticket all opened to
-            an identical-looking header. */}
+            white, so every module opened to an identical-looking header. */}
         <div aria-hidden="true" className="absolute inset-0 pointer-events-none" style={{
           background: `radial-gradient(ellipse 620px 240px at 0% 0%, ${accentFor(module.api_name).solid}14, transparent 68%)`,
         }} />
         <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3.5 min-w-0">
-          {module.api_name === 'products' && record.thumb_url ? (
-            <ProductThumb url={record.thumb_url} size={56} rounded="rounded-2xl" alt={title} className="shadow-md" />
-          ) : (
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white text-lg shrink-0 shadow-md"
-              style={{ background: avatarGradientFor(title) }}>
-              {initialsOf(title)}
-            </div>
-          )}
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white text-lg shrink-0 shadow-md"
+            style={{ background: avatarGradientFor(title) }}>
+            {initialsOf(title)}
+          </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="t-page-title">{title}</h1>
@@ -862,51 +835,6 @@ export default function UniversalDetail() {
                       {h.location && <span className="text-slate-500">{h.location}</span>}
                     </div>
                   )}
-                  {/* Linked customer line — for a record with no contact
-                      fields of its own (an opportunity, quotation,
-                      subscription), this is the only way to reach anyone
-                      without navigating away. Labelled with WHOSE number
-                      it is so you know who picks up. */}
-                  {(() => {
-                    const lc = linkedComms(record);
-                    if (!lc.company && !lc.phone && !lc.email) return null;
-                    return (
-                      <div className="flex items-center flex-wrap gap-x-3 gap-y-1.5 mt-2">
-                        {lc.company && (
-                          <Link to={lc.accountId ? `/records/accounts/${lc.accountId}` : '#'}
-                            className="inline-flex items-center gap-1.5 text-sm font-medium hover:underline"
-                            style={{ color: accentFor('accounts').solid }}>
-                            <Building2 className="w-3.5 h-3.5" /> {lc.company}
-                          </Link>
-                        )}
-                        {lc.contactName && (
-                          <span className="text-sm text-slate-500">
-                            {lc.contactName}{lc.contactRole ? ` · ${lc.contactRole}` : ''}
-                          </span>
-                        )}
-                        {lc.phone && (
-                          <span className="inline-flex items-center gap-1.5 text-sm text-slate-500"
-                            title={`${lc.phoneOwner}'s number`}>
-                            <PhoneCall className="w-3.5 h-3.5" /> {lc.phone}
-                            <a href={`tel:${lc.phone}`} aria-label="Call"
-                              className="text-[var(--color-brand)] hover:opacity-70"><PhoneCall className="w-3.5 h-3.5" /></a>
-                            <a href={`https://wa.me/${String(lc.phone).replace(/\D/g, '')}`} target="_blank" rel="noreferrer"
-                              aria-label="WhatsApp" className="text-[var(--color-success)] hover:opacity-70">
-                              <MessageCircle className="w-3.5 h-3.5" />
-                            </a>
-                          </span>
-                        )}
-                        {lc.email && (
-                          <a href={`mailto:${lc.email}`} title={`Write an email to ${lc.emailOwner}`}
-                            data-name={lc.emailOwner} data-module={module.api_name} data-record-id={id}
-                            className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-ink truncate">
-                            <Send className="w-3.5 h-3.5" /> {lc.email}
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })()}
-
                   {/* Who owns this record, re-assignable right here. */}
                   {(() => {
                     const uf = fields.filter((f) => USER_TYPES.has(f.field_type) && f.is_system);
@@ -955,8 +883,7 @@ export default function UniversalDetail() {
             return (
               <div className="flex items-center gap-2 pr-3">
                 {counts.map((c) => (
-                  <CountBox key={c.label} label={c.label} value={c.value}
-                    onClick={() => setTab(c.label === 'Deals' ? 'opportunities' : c.label.toLowerCase())} />
+                  <CountBox key={c.key} label={c.label} value={c.value} onClick={() => setTab(c.key)} />
                 ))}
               </div>
             );
@@ -986,15 +913,6 @@ export default function UniversalDetail() {
             </div>
           )}
 
-          {acctScore && (
-            <div className="flex items-center gap-4 pr-3 border-r border-line">
-              <MiniScoreRing score={acctScore.score} band={acctScore.band} label="Account Score" />
-              {acctScore.health && (
-                <MiniScoreRing score={acctScore.health.score} band={acctScore.health.band} label="Customer Health" />
-              )}
-            </div>
-          )}
-
           {can(module.api_name, 'edit') && (
             <button onClick={startEdit} className="border border-line text-sm font-medium px-4 py-2 rounded-lg hover:bg-white inline-flex items-center gap-2">
               <Pencil className="w-4 h-4" /> Edit
@@ -1008,58 +926,6 @@ export default function UniversalDetail() {
         </div>
         </div>
       </div>
-
-      {/* Sales documents — quotations, proforma invoices and invoices — all
-          carry line items, a PDF, and a place in a conversion chain. They get
-          the same three panels, driven by which module this is rather than by
-          three separate special cases. */}
-      {SALES_DOCUMENT_MODULES.has(module.api_name) && (
-        <div className="mb-5">
-          <DocumentItemsPanel
-            module={module}
-            recordId={id}
-            currency={record.currency}
-            // HSN/SAC and Unit are legally required on a tax invoice and just
-            // clutter on a quotation, so they appear only where they matter.
-            showTaxColumns={module.api_name !== 'quotations'}
-            canEdit={can(module.api_name, 'edit') && !(record.amount_paid > 0)}
-            onSaved={load} />
-          {record.amount_paid > 0 && (
-            <p className="t-meta mt-2">
-              Amounts are locked because a payment has been recorded against this invoice.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* A product's photo — sized automatically, shown on quotations. */}
-      {module.api_name === 'products' && (
-        <ProductPhotoPanel productId={Number(id)} productName={record.product_name}
-          canEdit={can('products', 'edit')} onChanged={load} />
-      )}
-
-      {/* Subscription / AMC: overview, payment schedule (Payments module),
-          renewal history, related customer and product/service. */}
-      {module.api_name === 'subscriptions' && (
-        <SubscriptionPanels recordId={id} canRenew={can('subscriptions', 'create')}
-          canViewPayments={can('payments', 'view')} onUpdated={load} />
-      )}
-
-      {/* Support Desk: SLA, coverage, conversation, timeline and actions. */}
-      {module.api_name === 'tickets' && can('support', 'view') && (
-        <TicketSupportPanel record={record} canEdit={can('tickets', 'edit')} onUpdated={load} />
-      )}
-      {module.api_name === 'major_incidents' && (
-        <IncidentPanel record={record} canEdit={can('major_incidents', 'edit')} onUpdated={load} />
-      )}
-      {module.api_name === 'problems' && (
-        <ProblemPanel record={record} canEdit={can('problems', 'edit')} onUpdated={load} />
-      )}
-
-      {/* The customer's subscriptions and AMCs, one row per subscription. */}
-      {module.api_name === 'accounts' && can('subscriptions', 'view') && (
-        <CustomerSubscriptions accountId={Number(id)} accountName={record.account_name}
-          canCreate={can('subscriptions', 'create')} />
       )}
 
       {usesFollowUpCard(module, fields) ? (
@@ -1075,25 +941,16 @@ export default function UniversalDetail() {
         <FollowUpPanel module={module} fields={fields} record={record} onUpdated={load} />
       )}
 
-      {module.api_name === 'invoices' && (
-        <DocumentPaymentsPanel invoiceId={id} record={record}
-          canEdit={can('payments', 'create')} onUpdated={load} />
-      )}
-
-      {SALES_DOCUMENT_MODULES.has(module.api_name) && (
-        <DocumentActionsPanel module={module} record={record}
-          canEdit={can(module.api_name, 'edit')} onUpdated={load} />
-      )}
-
       {module.api_name === 'calls' && <CallFactsPanel record={record} />}
-
-      {['contacts', 'accounts', 'opportunities'].includes(module.api_name) && (
-        <FieldVisitsPanel module={module.api_name} recordId={Number(id)} canEdit={can(module.api_name, 'edit')} />
-      )}
+      {module.api_name === 'courses' && <CourseSubjectsPanel courseId={id} canEdit={can('courses', 'edit')} />}
+      {module.api_name === 'branches' && <BranchLetterheadPanel branch={record} canEdit={can('branches', 'edit')} />}
+      {(module.api_name === 'fee_receipts' || module.api_name === 'fee_installments') && <FeeRecordPanel module={module.api_name} record={record} />}
+      {(module.api_name === 'vouchers' || module.api_name === 'expenses') && <AccountRecordPanel module={module.api_name} record={record} onChanged={load} />}
+      {module.api_name === 'staff_advances' && <AdvancePanel id={record.id} onChanged={load} />}
 
       <AiAnalysisPanel moduleApiName={module.api_name} recordId={id} />
 
-      {module.api_name !== 'documents' && !embeddedRelations.some(([k]) => k === 'documents') && (
+      {module.api_name !== 'documents' && module.api_name !== 'students' && !embeddedRelations.some(([k]) => k === 'documents') && (
         <DocumentsPanel moduleApiName={module.api_name} recordId={id} />
       )}
 
@@ -1107,9 +964,6 @@ export default function UniversalDetail() {
         const actions = [
           { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle, from: '#4ADE80', to: '#15803D',
             run: () => setWaOpen(true) },
-          // Call through the IVR (MCube): contacts and accounts, agents only.
-          ivrCall.can && ['contacts', 'accounts'].includes(module.api_name) && (record.phone || record.mobile || record.whatsapp)
-            && { key: 'ivr-call', label: ivrCall.busy ? 'On call…' : 'Call', icon: Phone, from: '#60A5FA', to: '#3B5BFF', run: ivrCall.run, disabled: ivrCall.busy },
           can('calls', 'create') && { key: 'call', label: 'Log Call', icon: PhoneCall, from: '#818CF8', to: '#4338CA',
             run: () => setLoggingOutcome(true) },
           // The CRM's own compose pop-up; it says so if email is not set up.
@@ -1126,10 +980,10 @@ export default function UniversalDetail() {
           canCreateRelation('notes', module.api_name) && can('notes', 'create')
             && { key: 'note', label: 'Note', icon: StickyNote, from: '#C4B5FD', to: '#6D28D9',
               run: () => setAddingRelation('notes') },
-          expenseMeta?.available && expenseMeta.me?.can?.create && ['contacts', 'accounts', 'opportunities'].includes(module.api_name)
-            && { key: 'expense', label: 'Expense', icon: ReceiptText, from: '#5EEAD4', to: '#0F766E',
-              run: () => askAddExpense({ related: { module: module.api_name, id: record.id, name: recordTitle(record, fields) } }) },
-        ].filter(Boolean);
+        ].filter(Boolean)
+          // (iCRM Institute) a branch, session, course, subject or batch is not
+          // a person: only tasks and notes go on it
+          .filter((x) => !ACADEMIC_MASTERS.has(module.api_name) || x.key === 'task' || x.key === 'note');
         if (actions.length === 0) return null;
         return (
           <div className="card p-3 mt-5">
@@ -1160,7 +1014,7 @@ export default function UniversalDetail() {
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors inline-flex items-center gap-1.5 ${
                 active ? '' : 'border-transparent text-slate-500 hover:text-ink'}`}
               style={active ? { borderColor: accentFor(module.api_name).solid, color: accentFor(module.api_name).solid } : undefined}>
-              {tabLabel(t)}
+              {isStudent && t === 'overview' ? 'Profile' : tabLabel(t)}
               {count !== null && count > 0 && (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                   style={active
@@ -1173,6 +1027,22 @@ export default function UniversalDetail() {
           );
         })}
       </div>
+
+      {isStudent && tab === 'academics' && <div className="mt-5"><StudentPanel student={record} canEdit={can('students', 'edit')} onChanged={load} /></div>}
+      {isStudent && tab === 'fees' && (
+        <div className="mt-5">
+          <FeesPanel student={record} autoSetup={/[?&]fees=setup\b/.test(window.location.search)} collectNonce={collectNonce} onChanged={() => setHeroKey((k) => k + 1)} />
+          {!can('fee_installments', 'view') && <div className="card p-5 t-meta">Your role does not see fees.</div>}
+        </div>
+      )}
+      {isStudent && tab === 'attendance' && (
+        <div className="mt-5">
+          <StudentAttendancePanel student={record} />
+          {!can('student_attendance', 'view') && <div className="card p-5 t-meta">Your role does not see attendance.</div>}
+        </div>
+      )}
+      {isStudent && tab === 'certificates' && <div className="mt-5"><CertificatesPanel student={record} canEdit={can('students', 'edit')} openNew={certNonce} /></div>}
+      {isStudent && tab === 'documents' && <div className="mt-5 -mt-0"><DocumentsPanel moduleApiName={module.api_name} recordId={id} /></div>}
 
       {tab === 'overview' && (
         <div className="mt-5">
@@ -1190,7 +1060,7 @@ export default function UniversalDetail() {
                       const f = fields.find((x) => x.api_name === apiName);
                       if (!f) return null;
                       return <DetailRow key={apiName} label={fieldLabel(f)}
-                        value={renderFieldValue(record, f)} />;
+                        value={valueOf(f)} />;
                     })}
                   </dl>
                 </div>
@@ -1210,7 +1080,7 @@ export default function UniversalDetail() {
                   <dl>
                     {group.fields.map((f) => (
                       <DetailRow key={f.id} label={fieldLabel(f)}
-                        value={renderFieldValue(record, f)} />
+                        value={valueOf(f)} />
                     ))}
                   </dl>
                 </div>
@@ -1226,7 +1096,7 @@ export default function UniversalDetail() {
             <div className="flex justify-end mb-2">
               <button onClick={() => (key === 'meetings' ? setSchedulingMeeting(true) : setAddingRelation(key))}
                 className="btn btn-primary">
-                + Add {key.replace(/_/g, ' ').replace(/s$/, '')}
+                + Add {key.replace(/_/g, ' ').replace(/ies$/, 'y').replace(/s$/, '')}
               </button>
             </div>
           )}
@@ -1294,7 +1164,7 @@ export default function UniversalDetail() {
         <WhatsAppTemplateModal
           subject={{ id: Number(id), module: module.api_name, name: title,
             phone: record.phone || record.mobile, interest: record.industry || '', city: record.city || '' }}
-          senderName={record.owner_name || ''} onClose={() => setWaOpen(false)} />
+          record={record} senderName={record.owner_name || ''} onClose={() => setWaOpen(false)} />
       )}
 
       {loggingOutcome && (
@@ -1308,7 +1178,7 @@ export default function UniversalDetail() {
 
       {addingRelation && (
         <AddRelatedModal relationKey={addingRelation} parentModule={module.api_name}
-          parentId={id} parentLabel={title}
+          parentId={id} parentLabel={title} parentRecord={record}
           onClose={() => setAddingRelation(null)}
           onCreated={() => { setAddingRelation(null); load(); }} />
       )}
